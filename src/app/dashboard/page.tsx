@@ -28,18 +28,14 @@ import {
   CheckCircle,
   Clock,
   Target,
+  Inbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import React from 'react';
 
-const chartData = [
-  { month: "January", score: 75 },
-  { month: "February", score: 82 },
-  { month: "March", score: 88 },
-  { month: "April", score: 85 },
-  { month: "May", score: 92 },
-  { month: "June", score: 90 },
-];
+const chartData: { month: string, score: number }[] = [];
+const recentInterviews: { id: string, role: string, date: string, score: number }[] = [];
 
 const chartConfig = {
   score: {
@@ -48,34 +44,13 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-const recentInterviews = [
-  {
-    id: "1",
-    role: "Software Engineer",
-    date: "2024-06-15",
-    score: 88,
-  },
-  {
-    id: "2",
-    role: "Product Manager",
-    date: "2024-06-10",
-    score: 92,
-  },
-  {
-    id: "3",
-    role: "UX Designer",
-    date: "2024-06-05",
-    score: 85,
-  },
-  {
-    id: "4",
-    role: "Data Scientist",
-    date: "2024-05-28",
-    score: 95,
-  },
-];
-
 export default function DashboardPage() {
+  const totalInterviews = 0;
+  const averageScore = 0;
+  const averageDuration = "0m";
+  const mostFrequentRole = "N/A";
+  const interviewsThisMonth = 0;
+
   return (
     <AppShell>
       <div className="flex flex-col gap-6">
@@ -95,9 +70,9 @@ export default function DashboardPage() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
+              <div className="text-2xl font-bold">{totalInterviews}</div>
               <p className="text-xs text-muted-foreground">
-                +2 from last month
+                +{interviewsThisMonth} from last month
               </p>
             </CardContent>
           </Card>
@@ -107,9 +82,9 @@ export default function DashboardPage() {
               <Target className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">87%</div>
+              <div className="text-2xl font-bold">{averageScore}%</div>
               <p className="text-xs text-muted-foreground">
-                +5% from last month
+                Up from last month
               </p>
             </CardContent>
           </Card>
@@ -121,9 +96,9 @@ export default function DashboardPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">23m</div>
+              <div className="text-2xl font-bold">{averageDuration}</div>
               <p className="text-xs text-muted-foreground">
-                -2m from last month
+                Compared to last month
               </p>
             </CardContent>
           </Card>
@@ -135,9 +110,9 @@ export default function DashboardPage() {
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Software Engineer</div>
+              <div className="text-2xl font-bold">{mostFrequentRole}</div>
               <p className="text-xs text-muted-foreground">
-                5 interviews
+                Based on your sessions
               </p>
             </CardContent>
           </Card>
@@ -148,32 +123,40 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle>Performance Over Time</CardTitle>
               <CardDescription>
-                Your average interview scores for the last 6 months.
+                Your average interview scores over time will appear here.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={chartConfig} className="h-[250px] w-full">
-                <BarChart accessibilityLayer data={chartData}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickFormatter={(value) => value.slice(0, 3)}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={10}
-                    domain={[60, 100]}
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent />}
-                  />
-                  <Bar dataKey="score" fill="var(--color-score)" radius={8} />
-                </BarChart>
+                {chartData.length > 0 ? (
+                  <BarChart accessibilityLayer data={chartData}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      tickMargin={10}
+                      axisLine={false}
+                      tickFormatter={(value) => value.slice(0, 3)}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={10}
+                      domain={[0, 100]}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent />}
+                    />
+                    <Bar dataKey="score" fill="var(--color-score)" radius={8} />
+                  </BarChart>
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                    <Inbox className="h-12 w-12" />
+                    <p>No data to display</p>
+                    <p className="text-xs">Complete an interview to see your performance.</p>
+                  </div>
+                )}
               </ChartContainer>
             </CardContent>
           </Card>
@@ -181,7 +164,7 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle>Recent Interviews</CardTitle>
               <CardDescription>
-                A log of your most recent practice sessions.
+                Your most recent practice sessions.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -194,17 +177,25 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recentInterviews.map((interview) => (
-                    <TableRow key={interview.id}>
-                      <TableCell className="font-medium">
-                        {interview.role}
-                      </TableCell>
-                      <TableCell>{interview.date}</TableCell>
-                      <TableCell className="text-right">
-                        {interview.score}%
+                  {recentInterviews.length > 0 ? (
+                    recentInterviews.map((interview) => (
+                      <TableRow key={interview.id}>
+                        <TableCell className="font-medium">
+                          {interview.role}
+                        </TableCell>
+                        <TableCell>{interview.date}</TableCell>
+                        <TableCell className="text-right">
+                          {interview.score}%
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-24 text-center">
+                        No recent interviews.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
               <div className="mt-4 flex justify-end">
