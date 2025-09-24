@@ -112,8 +112,13 @@ const useSpeech = (
 
   const speak = useCallback((text: string) => {
     if (!isVoiceEnabled || !window.speechSynthesis) return;
-    
+
     const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+    const indianVoice = voices.find(voice => voice.lang === 'en-IN');
+    if (indianVoice) {
+      utterance.voice = indianVoice;
+    }
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
@@ -139,10 +144,9 @@ export function InterviewView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isThinking, setIsThinking] = useState(false);
   const [userText, setUserText] = useState("");
-
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  
-  const processUserResponse = useCallback(async (response: string) => {
+
+  const processUserResponse = useCallback(async (response: string, speakCallback: (text: string) => void) => {
     if (!response.trim()) return;
 
     setUserText("");
@@ -157,10 +161,6 @@ export function InterviewView() {
         toast({ title: "Error", description: "Could not find the last AI question to process feedback.", variant: "destructive" });
         return;
     }
-
-    // This is passed to the useSpeech hook, which expects a speak function.
-    // We define a placeholder here and it will be replaced by the real one from useSpeech.
-    let speak = (text: string) => {};
 
     const [feedbackRes, questionRes] = await Promise.all([
         getAIFeedback({ userResponse: response, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`}),
@@ -181,7 +181,7 @@ export function InterviewView() {
     if(questionRes.success && questionRes.data){
         const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: questionRes.data.question };
         setMessages(prev => [...prev, aiMessage]);
-        speak(aiMessage.content);
+        speakCallback(aiMessage.content);
     } else {
         toast({ title: "Error", description: questionRes.error || "Failed to get next question.", variant: "destructive" });
     }
@@ -189,7 +189,10 @@ export function InterviewView() {
     setIsThinking(false);
   }, [messages, settings, toast]);
 
-  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse, toast);
+  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(
+    (text) => processUserResponse(text, speak), 
+    toast
+  );
 
   useEffect(() => {
     const role = searchParams.get("role");
@@ -216,22 +219,7 @@ export function InterviewView() {
       fetchFirstQuestion();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, toast]);
-  
-  useEffect(() => {
-    // This effect now correctly depends on `processUserResponse` and `speak`.
-    const handleResponseAndSpeak = (response: string) => {
-        processUserResponse(response).then(() => {
-            const lastMessage = messages[messages.length -1];
-            if(lastMessage.role === 'ai'){
-                speak(lastMessage.content);
-            }
-        });
-    };
-    
-    // This is a placeholder since we can't directly use the hook's returned function here.
-    // The main logic is handled inside `processUserResponse`.
-  }, [processUserResponse, speak, messages]);
+  }, [searchParams, toast, speak]);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -310,7 +298,7 @@ export function InterviewView() {
                     <Button onClick={toggleListening} variant={isListening ? 'destructive' : 'outline'} size="icon" disabled={isThinking || isSpeaking}>
                         {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                     </Button>
-                    <Button onClick={() => processUserResponse(userText)} disabled={!userText || isThinking || isListening || isSpeaking}>
+                    <Button onClick={() => processUserResponse(userText, speak)} disabled={!userText || isThinking || isListening || isSpeaking}>
                         <Send className="h-5 w-5 mr-2"/> Send
                     </Button>
                 </div>
@@ -353,3 +341,5 @@ export function InterviewView() {
     </div>
   );
 }
+
+    
