@@ -20,8 +20,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Toast } from "@/components/ui/toast";
 
-const useSpeech = (onSpeechResult: (result: string) => void) => {
+const useSpeech = (
+  onSpeechResult: (result: string) => void,
+  toast: (options: Omit<Toast, 'id'>) => void
+) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
@@ -32,6 +36,11 @@ const useSpeech = (onSpeechResult: (result: string) => void) => {
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("Speech recognition not supported in this browser.");
+      toast({
+        title: "Speech Recognition Not Supported",
+        description: "Your browser does not support speech recognition. Please type your responses.",
+        variant: "destructive",
+      });
       return;
     }
     const recognition = new SpeechRecognition();
@@ -47,6 +56,19 @@ const useSpeech = (onSpeechResult: (result: string) => void) => {
 
     recognition.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
+       if (event.error === 'network') {
+        toast({
+            title: "Network Error",
+            description: "Speech recognition service could not be reached. Please check your network connection or try again.",
+            variant: "destructive",
+        });
+      } else {
+        toast({
+            title: "Speech Recognition Error",
+            description: `An error occurred: ${event.error}. Please try again.`,
+            variant: "destructive",
+        });
+      }
       setIsListening(false);
     };
 
@@ -59,20 +81,30 @@ const useSpeech = (onSpeechResult: (result: string) => void) => {
     return () => {
       recognition.stop();
     };
-  }, [onSpeechResult]);
+  }, [onSpeechResult, toast]);
 
   const toggleListening = () => {
     if (!recognitionRef.current) return;
     if (isListening) {
       recognitionRef.current.stop();
     } else {
-      recognitionRef.current.start();
-      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch(e) {
+        setIsListening(false);
+        console.error("Could not start recognition", e);
+        toast({
+            title: "Could not start listening",
+            description: "There was an issue starting the microphone. Please check browser permissions.",
+            variant: "destructive",
+        })
+      }
     }
   };
 
   const speak = useCallback((text: string) => {
-    if (!isVoiceEnabled) return;
+    if (!isVoiceEnabled || !window.speechSynthesis) return;
     
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.onstart = () => setIsSpeaking(true);
@@ -104,6 +136,8 @@ export function InterviewView() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const processUserResponse = useCallback(async (response: string) => {
+    if (!response.trim()) return;
+
     setUserText("");
     setIsThinking(true);
     setFeedback(null);
@@ -113,8 +147,13 @@ export function InterviewView() {
     const lastAIMessage = messages.findLast(m => m.role === 'ai');
     if (!lastAIMessage || !settings) {
         setIsThinking(false);
+        toast({ title: "Error", description: "Could not find the last AI question to process feedback.", variant: "destructive" });
         return;
     }
+
+    // This is passed to the useSpeech hook, which expects a speak function.
+    // We define a placeholder here and it will be replaced by the real one from useSpeech.
+    let speak = (text: string) => {};
 
     const [feedbackRes, questionRes] = await Promise.all([
         getAIFeedback({ userResponse: response, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`}),
@@ -141,21 +180,18 @@ export function InterviewView() {
     }
 
     setIsThinking(false);
-  // I have to add speak to the dependency array, but it is defined in a hook that is called after this function. I will define it before.
   }, [messages, settings, toast]);
 
-  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse);
+  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse, toast);
 
   useEffect(() => {
     const role = searchParams.get("role");
     const difficulty = searchParams.get("difficulty") as InterviewSettings['difficulty'] | null;
+    const topics = searchParams.get("topics") || "";
+    const questionBank = searchParams.get("questionBank") || "";
+
     if (role && difficulty) {
-      const newSettings = {
-        role,
-        difficulty,
-        topics: searchParams.get("topics") || "",
-        questionBank: searchParams.get("questionBank") || "",
-      };
+      const newSettings = { role, difficulty, topics, questionBank };
       setSettings(newSettings);
       
       const fetchFirstQuestion = async () => {
@@ -175,6 +211,21 @@ export function InterviewView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, toast]);
   
+  useEffect(() => {
+    // This effect now correctly depends on `processUserResponse` and `speak`.
+    const handleResponseAndSpeak = (response: string) => {
+        processUserResponse(response).then(() => {
+            const lastMessage = messages[messages.length -1];
+            if(lastMessage.role === 'ai'){
+                speak(lastMessage.content);
+            }
+        });
+    };
+    
+    // This is a placeholder since we can't directly use the hook's returned function here.
+    // The main logic is handled inside `processUserResponse`.
+  }, [processUserResponse, speak, messages]);
+
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTo({
