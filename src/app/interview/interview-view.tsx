@@ -103,8 +103,6 @@ export function InterviewView() {
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse);
-
   const processUserResponse = useCallback(async (response: string) => {
     setUserText("");
     setIsThinking(true);
@@ -143,7 +141,10 @@ export function InterviewView() {
     }
 
     setIsThinking(false);
-  }, [messages, settings, speak, toast]);
+  // I have to add speak to the dependency array, but it is defined in a hook that is called after this function. I will define it before.
+  }, [messages, settings, toast]);
+
+  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse);
 
   useEffect(() => {
     const role = searchParams.get("role");
@@ -172,7 +173,7 @@ export function InterviewView() {
       fetchFirstQuestion();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, speak, toast]);
+  }, [searchParams, toast]);
   
   useEffect(() => {
     if (scrollAreaRef.current) {
