@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Toast } from "@/components/ui/toast";
+import { UserResponseIndicator } from "@/components/user-response-indicator";
 
 const useSpeech = (
   onSpeechResult: (result: string) => void,
@@ -115,9 +116,14 @@ const useSpeech = (
 
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
-    const indianVoice = voices.find(voice => voice.lang === 'en-IN');
-    if (indianVoice) {
-      utterance.voice = indianVoice;
+    const indianMaleVoice = voices.find(voice => voice.lang === 'en-IN' && voice.name.includes('Male'));
+    if (indianMaleVoice) {
+      utterance.voice = indianMaleVoice;
+    } else {
+        const indianVoice = voices.find(voice => voice.lang === 'en-IN');
+        if (indianVoice) {
+            utterance.voice = indianVoice;
+        }
     }
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -145,7 +151,7 @@ export function InterviewView() {
   const [isThinking, setIsThinking] = useState(false);
   const [userText, setUserText] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-
+  
   const processUserResponse = useCallback(async (response: string, speakCallback: (text: string) => void) => {
     if (!response.trim()) return;
 
@@ -166,7 +172,7 @@ export function InterviewView() {
         getAIFeedback({ userResponse: response, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`}),
         getAIQuestion({
             role: settings.role,
-            difficulty: settings.difficulty,
+            difficultyLevel: settings.difficulty,
             questionBank: settings.questionBank,
             previousQuestions: messages.filter(m => m.role === 'ai').map(m => m.content)
         })
@@ -219,7 +225,7 @@ export function InterviewView() {
       fetchFirstQuestion();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, toast, speak]);
+  }, [searchParams, toast]);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -241,6 +247,8 @@ export function InterviewView() {
       </div>
     );
   }
+
+  const isLastMessageFromAI = messages.length > 0 && messages[messages.length - 1].role === 'ai';
 
   return (
     <div className="grid md:grid-cols-3 gap-6 h-full">
@@ -278,6 +286,11 @@ export function InterviewView() {
                         <Loader2 className="h-5 w-5 animate-spin" />
                     </div>
                 </div>
+            )}
+            {isLastMessageFromAI && !isThinking && !isSpeaking && (
+              <div className="flex justify-center">
+                  <UserResponseIndicator />
+              </div>
             )}
           </div>
         </ScrollArea>
@@ -341,5 +354,3 @@ export function InterviewView() {
     </div>
   );
 }
-
-    
