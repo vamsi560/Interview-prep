@@ -103,6 +103,8 @@ export function InterviewView() {
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse);
+
   const processUserResponse = useCallback(async (response: string) => {
     setUserText("");
     setIsThinking(true);
@@ -120,7 +122,7 @@ export function InterviewView() {
         getAIFeedback({ userResponse: response, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`}),
         getAIQuestion({
             role: settings.role,
-            difficultyLevel: settings.difficulty,
+            difficulty: settings.difficulty,
             questionBank: settings.questionBank,
             previousQuestions: messages.filter(m => m.role === 'ai').map(m => m.content)
         })
@@ -142,8 +144,6 @@ export function InterviewView() {
 
     setIsThinking(false);
   }, [messages, settings, speak, toast]);
-
-  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(processUserResponse);
 
   useEffect(() => {
     const role = searchParams.get("role");
@@ -171,6 +171,7 @@ export function InterviewView() {
       };
       fetchFirstQuestion();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, speak, toast]);
   
   useEffect(() => {
