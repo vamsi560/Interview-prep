@@ -62,7 +62,14 @@ const useSpeech = (
             description: "Speech recognition service could not be reached. Please check your network connection or try again.",
             variant: "destructive",
         });
-      } else {
+      } else if (event.error === 'no-speech') {
+        toast({
+            title: "No Speech Detected",
+            description: "I didn't hear anything. Please try speaking again.",
+            variant: "destructive",
+        });
+      }
+      else {
         toast({
             title: "Speech Recognition Error",
             description: `An error occurred: ${event.error}. Please try again.`,
@@ -134,7 +141,7 @@ export function InterviewView() {
   const [userText, setUserText] = useState("");
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-
+  
   const processUserResponse = useCallback(async (response: string) => {
     if (!response.trim()) return;
 
