@@ -32,22 +32,27 @@ const prompt = ai.definePrompt({
   name: 'aiInterviewerAsksQuestionsPrompt',
   input: {schema: AIInterviewerAsksQuestionsInputSchema},
   output: {schema: AIInterviewerAsksQuestionsOutputSchema},
-  prompt: `You are an AI interviewer designed to ask relevant and challenging questions to candidates.
+  prompt: `You are an AI interviewer. Your task is to ask a series of 5 questions. 
 
-You are interviewing a candidate for the role of {{{role}}} at a difficulty level of {{{difficultyLevel}}}.
+You are interviewing a candidate for the role of {{{role}}}.
 
-{% if questionBank %}Consider the following questions from the uploaded question bank: {{{questionBank}}}.{% endif %}
+Here is the sequence of questions you must ask. Ask only one question at a time, in this order:
+1.  "First, please introduce yourself."
+2.  "Tell me about your most recent project experience."
+3.  "What technologies and tools are you most comfortable with?"
+4.  "What are your biggest strengths and weaknesses?"
+5.  "Where do you see yourself in the next 5 years?"
 
-{% if previousQuestions.length > 0 %}Do not repeat these questions that were already asked: 
-{{#each previousQuestions}}- {{{this}}}
-{{/each}}{% endif %}
+Based on the previous questions, determine which question to ask next.
 
-Generate one relevant interview question for the candidate. The question should be appropriate for the specified role and difficulty level.
+{{#if previousQuestions}}
+You have already asked the following questions:
+{{#each previousQuestions}}
+- {{{this}}}
+{{/each}}
+{{/if}}
 
-Output the question in the following format:
-{
-  "question": "The generated question here"
-}
+Generate the next question from the list that has not been asked yet. If all 5 questions have been asked, respond with "The interview is now complete. Thank you for your time."
 `,
 });
 
