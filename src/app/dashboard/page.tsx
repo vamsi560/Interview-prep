@@ -1,3 +1,4 @@
+
 "use client";
 
 import { AppShell } from "@/components/app-shell";
@@ -29,13 +30,14 @@ import {
   Clock,
   Target,
   Inbox,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import React from 'react';
-
-const chartData: { month: string, score: number }[] = [];
-const recentInterviews: { id: string, role: string, date: string, score: number }[] = [];
+import React, { useEffect, useState } from 'react';
+import { fetchInterviewSessions } from "../actions";
+import type { InterviewSession } from "@/lib/types";
+import { format, parseISO } from "date-fns";
 
 const chartConfig = {
   score: {
@@ -45,15 +47,64 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 export default function DashboardPage() {
-  const totalInterviews = 0;
-  const averageScore = 0;
-  const averageDuration = "0m";
-  const mostFrequentRole = "N/A";
-  const interviewsThisMonth = 0;
+  const [sessions, setSessions] = useState<InterviewSession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadSessions() {
+      setLoading(true);
+      const fetchedSessions = await fetchInterviewSessions();
+      setSessions(fetchedSessions);
+      setLoading(false);
+    }
+    loadSessions();
+  }, []);
+
+  const totalInterviews = sessions.length;
+  const completedSessions = sessions.filter(s => parseInt(s.duration, 10) > 0);
+
+  const averageScore = completedSessions.length > 0
+    ? completedSessions.reduce((sum, s) => sum + s.score, 0) / completedSessions.length
+    : 0;
+
+  const averageDuration = completedSessions.length > 0 ?
+    completedSessions.reduce((sum, s) => sum + parseInt(s.duration, 10), 0) / completedSessions.length
+    : 0;
+
+  const mostFrequentRole = totalInterviews > 0 ?
+    Object.entries(sessions.reduce((acc, s) => {
+        acc[s.role] = (acc[s.role] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>)).sort((a, b) => b[1] - a[1])[0][0]
+    : "N/A";
+
+  const interviewsThisMonth = sessions.filter(s => {
+    const sessionDate = parseISO(s.date);
+    const today = new Date();
+    return sessionDate.getMonth() === today.getMonth() && sessionDate.getFullYear() === today.getFullYear();
+  }).length;
+  
+  const chartData = completedSessions.map(s => ({
+      month: format(parseISO(s.date), 'MMM'),
+      score: s.score
+  })).reverse();
+  
+  const recentInterviews = sessions.slice(0, 5);
+
+  if (loading) {
+      return (
+          <AppShell>
+               <div className="flex h-full w-full items-center justify-center">
+                  <Loader2 className="h-12 w-12 animate-spin text-primary" />
+               </div>
+          </AppShell>
+      )
+  }
+
 
   return (
     <AppShell>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-8">
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
@@ -61,8 +112,8 @@ export default function DashboardPage() {
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="relative overflow-hidden bg-gradient-to-br from-primary/20 to-secondary">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Total Interviews
@@ -72,23 +123,23 @@ export default function DashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">{totalInterviews}</div>
               <p className="text-xs text-muted-foreground">
-                +{interviewsThisMonth} from last month
+                +{interviewsThisMonth} this month
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="relative overflow-hidden bg-gradient-to-br from-accent/20 to-secondary">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Average Score</CardTitle>
               <Target className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{averageScore}%</div>
-              <p className="text-xs text-muted-foreground">
-                Up from last month
+              <div className="text-2xl font-bold">{averageScore.toFixed(0)}%</div>
+               <p className="text-xs text-muted-foreground">
+                For completed interviews
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Average Duration
@@ -96,13 +147,13 @@ export default function DashboardPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{averageDuration}</div>
-              <p className="text-xs text-muted-foreground">
-                Compared to last month
+              <div className="text-2xl font-bold">{averageDuration.toFixed(0)}m</div>
+               <p className="text-xs text-muted-foreground">
+                For completed interviews
               </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
                 Most Frequent Role
@@ -118,12 +169,12 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+          <Card className="lg:col-span-3">
             <CardHeader>
               <CardTitle>Performance Over Time</CardTitle>
               <CardDescription>
-                Your average interview scores over time will appear here.
+                Your interview scores over the last few sessions.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -160,7 +211,7 @@ export default function DashboardPage() {
               </ChartContainer>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Recent Interviews</CardTitle>
               <CardDescription>
@@ -183,9 +234,9 @@ export default function DashboardPage() {
                         <TableCell className="font-medium">
                           {interview.role}
                         </TableCell>
-                        <TableCell>{interview.date}</TableCell>
+                        <TableCell>{format(parseISO(interview.date), "PPP")}</TableCell>
                         <TableCell className="text-right">
-                          {interview.score}%
+                          {interview.score > 0 ? `${interview.score}%` : 'In Progress'}
                         </TableCell>
                       </TableRow>
                     ))

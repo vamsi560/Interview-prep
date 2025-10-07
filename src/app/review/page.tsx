@@ -1,3 +1,6 @@
+
+"use client";
+
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,12 +18,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowUpDown, PlayCircle } from "lucide-react";
+import { ArrowUpDown, BookOpen, Loader2 } from "lucide-react";
 import Link from "next/link";
-
-const interviews: { id: string, role: string, date: string, duration: string, score: number }[] = [];
+import { useEffect, useState } from "react";
+import { fetchInterviewSessions } from "../actions";
+import type { InterviewSession } from "@/lib/types";
+import { format, parseISO } from "date-fns";
 
 export default function ReviewPage() {
+  const [interviews, setInterviews] = useState<InterviewSession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadInterviews() {
+      setLoading(true);
+      const fetchedInterviews = await fetchInterviewSessions();
+      setInterviews(fetchedInterviews);
+      setLoading(false);
+    }
+    loadInterviews();
+  }, []);
+
   return (
     <AppShell>
       <div className="flex flex-col gap-6">
@@ -38,6 +56,11 @@ export default function ReviewPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+             {loading ? (
+                <div className="flex justify-center items-center h-48">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+             ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -68,14 +91,14 @@ export default function ReviewPage() {
                   interviews.map((interview) => (
                     <TableRow key={interview.id}>
                       <TableCell className="font-medium">{interview.role}</TableCell>
-                      <TableCell>{interview.date}</TableCell>
-                      <TableCell>{interview.duration}</TableCell>
+                      <TableCell>{format(parseISO(interview.date), "PPP")}</TableCell>
+                      <TableCell>{interview.duration}m</TableCell>
                       <TableCell className="text-right">{interview.score}%</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" asChild>
-                          <Link href="#">
-                            <PlayCircle className="h-4 w-4" />
-                            <span className="sr-only">Play recording</span>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/review/${interview.id}`}>
+                            <BookOpen className="h-4 w-4 mr-2" />
+                            View Report
                           </Link>
                         </Button>
                       </TableCell>
@@ -90,6 +113,7 @@ export default function ReviewPage() {
                 )}
               </TableBody>
             </Table>
+             )}
           </CardContent>
         </Card>
       </div>

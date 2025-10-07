@@ -1,7 +1,10 @@
+
+import type { GenerateSummaryReportOutput } from "@/ai/flows/generate-summary-report";
+
 export type InterviewSettings = {
   role: string;
   difficulty: 'easy' | 'medium' | 'hard';
-  topics: string;
+  topics: string | string[];
   questionBank?: string;
 };
 
@@ -14,6 +17,7 @@ export type Message = {
 export type Feedback = {
   feedback: string;
   suggestions: string;
+  score: number;
 };
 
 export type InterviewSession = {
@@ -22,4 +26,7 @@ export type InterviewSession = {
   role: string;
   score: number;
   duration: string;
+  feedback: Feedback[];
+  transcript: Message[];
+  summaryReport?: GenerateSummaryReportOutput | null;
 };

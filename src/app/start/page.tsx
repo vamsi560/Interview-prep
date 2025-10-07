@@ -1,3 +1,4 @@
+
 "use client";
 
 import { AppShell } from "@/components/app-shell";
@@ -19,7 +20,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -32,11 +32,31 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import React from "react";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { createInterviewSession } from "../actions";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
+
+const rolesAndTopics = {
+  "Software Engineer": ["React", "System Design", "Algorithms", "Databases", "Next.js", "State Management", "Component Lifecycle"],
+  "Java Developer": ["Core Java", "Spring Boot", "Hibernate", "Microservices", "JPA"],
+  ".NET Developer": ["C#", "ASP.NET Core", "Entity Framework", "Azure", "MVC"],
+  "Python Developer": ["Django", "Flask", "Data Structures", "APIs", "Pandas"],
+  "Gen AI Engineer": ["LLMs", "Prompt Engineering", "Genkit", "Vector Databases", "Fine-tuning"],
+  "Cloud Engineer": ["AWS", "Azure", "GCP", "Kubernetes", "Terraform"],
+  "DevOps Engineer": ["CI/CD", "Docker", "Jenkins", "Ansible", "Monitoring"],
+  "Product Manager": ["Product Strategy", "User Research", "Roadmapping", "Agile Methodologies"],
+  "Data Scientist": ["Machine Learning", "Statistics", "Python", "Data Visualization"],
+  "UX/UI Designer": ["User Research", "Wireframing", "Prototyping", "Visual Design"],
+};
+
+type Role = keyof typeof rolesAndTopics;
 
 const formSchema = z.object({
-  role: z.string().min(2, "Role must be at least 2 characters."),
+  role: z.string().min(1, "Please select a job role."),
   difficulty: z.enum(["easy", "medium", "hard"]),
-  topics: z.string().optional(),
+  topics: z.array(z.string()).optional(),
   questionBank: z.string().optional(),
 });
 
@@ -44,24 +64,54 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function StartInterviewPage() {
   const router = useRouter();
+  const { toast } = useToast();
+  const [isStarting, setIsStarting] = React.useState(false);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       role: "",
       difficulty: "medium",
-      topics: "",
+      topics: [],
       questionBank: "",
     },
   });
 
-  function onSubmit(values: FormValues) {
-    const params = new URLSearchParams({
+  const selectedRole = form.watch("role") as Role;
+  const availableTopics = selectedRole ? rolesAndTopics[selectedRole] : [];
+
+  React.useEffect(() => {
+    form.setValue("topics", []);
+  }, [selectedRole, form]);
+
+  async function onSubmit(values: FormValues) {
+    setIsStarting(true);
+    
+    const initialSession = {
       role: values.role,
-      difficulty: values.difficulty,
-      ...(values.topics && { topics: values.topics }),
-      ...(values.questionBank && { questionBank: values.questionBank }),
-    });
-    router.push(`/interview?${params.toString()}`);
+      score: 0,
+      duration: "0",
+    };
+
+    const result = await createInterviewSession(initialSession);
+
+    if (result.success && result.id) {
+      const params = new URLSearchParams({
+        role: values.role,
+        difficulty: values.difficulty,
+        interviewId: result.id,
+        ...(values.topics && values.topics.length > 0 && { topics: values.topics.join(',') }),
+        ...(values.questionBank && { questionBank: values.questionBank }),
+      });
+      router.push(`/interview?${params.toString()}`);
+    } else {
+      toast({
+        title: "Error starting interview",
+        description: "Could not create an interview session. Please try again.",
+        variant: "destructive",
+      });
+      setIsStarting(false);
+    }
   }
 
   return (
@@ -83,9 +133,18 @@ export default function StartInterviewPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Job Role</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Software Engineer" {...field} />
-                      </FormControl>
+                       <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isStarting}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a job role" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {Object.keys(rolesAndTopics).map(role => (
+                            <SelectItem key={role} value={role}>{role}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormDescription>
                         The position you're practicing for.
                       </FormDescription>
@@ -93,7 +152,7 @@ export default function StartInterviewPage() {
                     </FormItem>
                   )}
                 />
-                <FormField
+                 <FormField
                   control={form.control}
                   name="difficulty"
                   render={({ field }) => (
@@ -102,6 +161,7 @@ export default function StartInterviewPage() {
                       <Select
                         onValueChange={field.onChange}
                         defaultValue={field.value}
+                        disabled={isStarting}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -109,9 +169,9 @@ export default function StartInterviewPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="easy">Easy</SelectItem>
-                          <SelectItem value="medium">Medium</SelectItem>
-                          <SelectItem value="hard">Hard</SelectItem>
+                          <SelectItem value="easy">Easy-Junior</SelectItem>
+                          <SelectItem value="medium">Senior</SelectItem>
+                          <SelectItem value="hard">Advanced-Lead</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormDescription>
@@ -121,22 +181,32 @@ export default function StartInterviewPage() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="topics"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Specific Topics (Optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., React, System Design" {...field} />
-                      </FormControl>
-                       <FormDescription>
-                        Comma-separated list of topics to focus on.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+
+                {selectedRole && (
+                  <FormField
+                    control={form.control}
+                    name="topics"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Specific Topics (Optional)</FormLabel>
+                        <FormControl>
+                          <MultiSelect
+                            options={availableTopics}
+                            selected={field.value || []}
+                            onChange={field.onChange}
+                            placeholder="Select topics..."
+                            disabled={isStarting}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Choose specific topics to focus on.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
                 <FormField
                   control={form.control}
                   name="questionBank"
@@ -148,6 +218,7 @@ export default function StartInterviewPage() {
                           placeholder="Paste your custom questions here, one per line."
                           className="min-h-32"
                           {...field}
+                          disabled={isStarting}
                         />
                       </FormControl>
                       <FormDescription>
@@ -159,8 +230,9 @@ export default function StartInterviewPage() {
                 />
               </CardContent>
               <CardFooter>
-                <Button type="submit" className="w-full" size="lg">
-                  Start Interview
+                <Button type="submit" className="w-full" size="lg" disabled={isStarting}>
+                  {isStarting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isStarting ? "Starting..." : "Start Interview"}
                 </Button>
               </CardFooter>
             </form>

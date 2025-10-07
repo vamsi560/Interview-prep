@@ -1,3 +1,4 @@
+
 // Implemented by Gemini.
 'use server';
 /**
@@ -21,6 +22,7 @@ export type AIInterviewerAsksQuestionsInput = z.infer<typeof AIInterviewerAsksQu
 
 const AIInterviewerAsksQuestionsOutputSchema = z.object({
   question: z.string().describe('The generated interview question.'),
+  isComplete: z.boolean().describe('Whether the interview is complete.')
 });
 export type AIInterviewerAsksQuestionsOutput = z.infer<typeof AIInterviewerAsksQuestionsOutputSchema>;
 
@@ -32,16 +34,24 @@ const prompt = ai.definePrompt({
   name: 'aiInterviewerAsksQuestionsPrompt',
   input: {schema: AIInterviewerAsksQuestionsInputSchema},
   output: {schema: AIInterviewerAsksQuestionsOutputSchema},
-  prompt: `You are an AI interviewer. Your task is to ask a series of 5 questions. 
+  prompt: `You are an AI interviewer. Your task is to ask a series of 5 questions.
 
 You are interviewing a candidate for the role of {{{role}}}.
 
+{{#if questionBank}}
+You have been provided with the following question bank. Prioritize asking questions from this list.
+---
+{{{questionBank}}}
+---
+{{else}}
 Here is the sequence of questions you must ask. Ask only one question at a time, in this order:
 1.  "First, please introduce yourself."
 2.  "Tell me about your most recent project experience."
 3.  "What technologies and tools are you most comfortable with?"
 4.  "What are your biggest strengths and weaknesses?"
 5.  "Where do you see yourself in the next 5 years?"
+{{/if}}
+
 
 Based on the previous questions, determine which question to ask next.
 
@@ -52,7 +62,7 @@ You have already asked the following questions:
 {{/each}}
 {{/if}}
 
-Generate the next question from the list that has not been asked yet. If all 5 questions have been asked, respond with "The interview is now complete. Thank you for your time."
+Generate the next question from the list that has not been asked yet. If all 5 questions have been asked, respond with "The interview is now complete. Thank you for your time." and set isComplete to true. Otherwise, set isComplete to false.
 `,
 });
 
