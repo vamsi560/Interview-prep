@@ -94,21 +94,52 @@ export async function checkProctoring(input: ProctoringInput) {
 
 export async function generateAndSaveSummaryReport(interviewId: string) {
   try {
-    const session = await getInterviewSession(interviewId);
-    if (!session) {
-      throw new Error("Interview session not found.");
-    }
+    // Add timeout to prevent Vercel timeout
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Report generation timed out')), 240000) // 4 minutes
+    );
 
-    const reportInput: GenerateSummaryReportInput = {
-      transcript: session.transcript.map(m => ({ role: m.role, content: m.content })),
-      feedback: session.feedback,
-      role: session.role,
+    const generateReportPromise = async () => {
+      const session = await getInterviewSession(interviewId);
+      if (!session) {
+        throw new Error("Interview session not found.");
+      }
+
+      // Validate and clean data before processing
+      const cleanTranscript = session.transcript
+        .filter(m => m && m.role && m.content)
+        .map(m => ({ role: m.role, content: m.content.substring(0, 2000) })); // Limit content length
+      
+      const cleanFeedback = session.feedback
+        .filter(f => f && typeof f.score === 'number' && f.feedback && f.suggestions)
+        .map(f => ({
+          feedback: f.feedback.substring(0, 1000),
+          suggestions: f.suggestions.substring(0, 1000),
+          score: Math.max(0, Math.min(100, f.score)) // Ensure score is between 0-100
+        }));
+
+      if (cleanTranscript.length === 0) {
+        throw new Error("No valid transcript data found.");
+      }
+
+      const reportInput: GenerateSummaryReportInput = {
+        transcript: cleanTranscript,
+        feedback: cleanFeedback,
+        role: session.role,
+      };
+
+      const report = await generateSummaryReport(reportInput);
+
+      // Validate report before saving
+      if (!report || typeof report.overallScore !== 'number') {
+        throw new Error("Invalid report generated.");
+      }
+
+      await updateInterviewSession(interviewId, { summaryReport: report });
+      return report;
     };
 
-    const report = await generateSummaryReport(reportInput);
-
-    await updateInterviewSession(interviewId, { summaryReport: report });
-
+    const report = await Promise.race([generateReportPromise(), timeoutPromise]);
     return { success: true, data: report };
   } catch (error) {
     console.error("Error generating or saving summary report:", error);

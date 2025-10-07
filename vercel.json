@@ -5,5 +5,10 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "functions": {
+    "src/app/**/*.ts": {
+      "maxDuration": 300
+    }
+  }
 }

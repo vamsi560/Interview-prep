@@ -13,17 +13,47 @@ import {
 } from 'firebase/firestore';
 import type {InterviewSession} from './types';
 
+// Helper function to sanitize data for Firestore
+function sanitizeForFirestore(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  
+  if (typeof obj === 'function') {
+    return null;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item)).filter(item => item !== null);
+  }
+  
+  if (typeof obj === 'object') {
+    const sanitized: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      const sanitizedValue = sanitizeForFirestore(value);
+      if (sanitizedValue !== null && sanitizedValue !== undefined) {
+        sanitized[key] = sanitizedValue;
+      }
+    }
+    return sanitized;
+  }
+  
+  return obj;
+}
+
 export async function addInterviewSession(
   session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport'>
 ) {
   try {
-    const docRef = await addDoc(collection(db, 'interviewSessions'), {
+    const sanitizedSession = sanitizeForFirestore({
       ...session,
       date: new Date().toISOString(),
       feedback: [],
       transcript: [],
       summaryReport: null,
     });
+    
+    const docRef = await addDoc(collection(db, 'interviewSessions'), sanitizedSession);
     return {success: true, id: docRef.id};
   } catch (e) {
     console.error('Error adding document: ', e);
@@ -37,9 +67,16 @@ export async function updateInterviewSession(
 ) {
   try {
     const sessionRef = doc(db, 'interviewSessions', id);
-    await updateDoc(sessionRef, {
-        ...session
-    });
+    const sanitizedSession = sanitizeForFirestore(session);
+    
+    // Remove empty or null fields to avoid Firestore issues
+    const cleanSession = Object.fromEntries(
+      Object.entries(sanitizedSession).filter(([_, value]) => 
+        value !== null && value !== undefined && value !== ''
+      )
+    );
+    
+    await updateDoc(sessionRef, cleanSession);
     return {success: true, id };
   } catch (e) {
     console.error('Error updating document: ', e);
