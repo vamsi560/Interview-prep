@@ -127,7 +127,6 @@ export default function StartInterviewPage() {
       setIsStarting(false);
     }
   }
-  }
 
   return (
     <AppShell>

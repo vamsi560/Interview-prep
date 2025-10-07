@@ -6,14 +6,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getAIQuestion, getAIFeedback, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
-  Card      const fetchFirstQuestion = async () => {
-        setIsLoading(true);
-        
-        try {
-          // Add timeout for AI question generation
-          const questionTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Question generation timed out')), 45000) // 45 seconds
-          );\n\n          const questionPromise = getAIQuestion({ \n            role: newSettings.role, \n            difficultyLevel: newSettings.difficulty, \n            questionBank: newSettings.questionBank \n          });\n\n          const res = await Promise.race([questionPromise, questionTimeout]);\n          \n          if(res.success && res.data){\n            const firstMessage: Message = { id: Date.now().toString(), role: \"ai\", content: res.data.question };\n            setMessages([firstMessage]);\n            speak(firstMessage.content);\n          } else {\n            throw new Error(res.error || \"Failed to generate first question.\");\n          }\n        } catch (error) {\n          console.error('Error fetching first question:', error);\n          \n          // Fallback to a default question if AI fails\n          const fallbackQuestion = `Hello! Welcome to your ${newSettings.role} interview. Let's start with a simple question: Could you please introduce yourself and tell me about your background?`;\n          \n          const firstMessage: Message = { id: Date.now().toString(), role: \"ai\", content: fallbackQuestion };\n          setMessages([firstMessage]);\n          speak(fallbackQuestion);\n          \n          toast({ \n            title: \"Using Fallback Question\", \n            description: \"AI question generation is slow. Started with a basic question.\",\n            variant: \"default\"\n          });\n        } finally {\n          setIsLoading(false);\n        }\n      };\n      fetchFirstQuestion();nt,
+  Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -341,15 +335,47 @@ export function InterviewView() {
       
       const fetchFirstQuestion = async () => {
         setIsLoading(true);
-        const res = await getAIQuestion({ role: newSettings.role, difficultyLevel: newSettings.difficulty, questionBank: newSettings.questionBank, previousQuestions: [] });
-        if(res.success && res.data){
+        
+        try {
+          // Add timeout for AI question generation
+          const questionTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Question generation timed out')), 45000) // 45 seconds
+          );
+
+          const questionPromise = getAIQuestion({ 
+            role: newSettings.role, 
+            difficultyLevel: newSettings.difficulty, 
+            questionBank: newSettings.questionBank,
+            previousQuestions: [] 
+          });
+
+          const res = await Promise.race([questionPromise, questionTimeout]);
+          
+          if(res.success && res.data){
             const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.question };
             setMessages([firstMessage]);
             speak(firstMessage.content);
-        } else {
-            toast({ title: "Error", description: res.error || "Failed to start interview.", variant: "destructive" });
+          } else {
+            throw new Error(res.error || "Failed to generate first question.");
+          }
+        } catch (error) {
+          console.error('Error fetching first question:', error);
+          
+          // Fallback to a default question if AI fails
+          const fallbackQuestion = `Hello! Welcome to your ${newSettings.role} interview. Let's start with a simple question: Could you please introduce yourself and tell me about your background?`;
+          
+          const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: fallbackQuestion };
+          setMessages([firstMessage]);
+          speak(fallbackQuestion);
+          
+          toast({ 
+            title: "Using Fallback Question", 
+            description: "AI question generation is slow. Started with a basic question.",
+            variant: "default"
+          });
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       };
       fetchFirstQuestion();
     }
