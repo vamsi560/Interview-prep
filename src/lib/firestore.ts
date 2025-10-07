@@ -1,51 +1,10 @@
 
-// Firestore operations - COMPLETELY COMMENTED OUT
+// Firestore operations - COMPLETELY DISABLED
 // All database operations now use local/stub implementations
-// Uncomment the sections below when you want to enable Firebase persistence
+// NO FIREBASE IMPORTS - This prevents any Firebase connections
 
-/*
-"use server";
-import {db, isFirebaseConfigured} from '@/lib/firebase';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  orderBy,
-  query,
-  doc,
-  updateDoc,
-  getDoc,
-} from 'firebase/firestore';
-import type {InterviewSession} from './types';
-
-// Helper function to sanitize data for Firestore
-function sanitizeForFirestore(obj: any): any {
-  if (obj === null || obj === undefined) {
-    return null;
-  }
-  
-  if (typeof obj === 'function') {
-    return null;
-  }
-  
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForFirestore(item)).filter(item => item !== null);
-  }
-  
-  if (typeof obj === 'object') {
-    const sanitized: any = {};
-    for (const [key, value] of Object.entries(obj)) {
-      const sanitizedValue = sanitizeForFirestore(value);
-      if (sanitizedValue !== null && sanitizedValue !== undefined) {
-        sanitized[key] = sanitizedValue;
-      }
-    }
-    return sanitized;
-  }
-  
-  return obj;
-}
-*/
+// Original Firebase code removed to prevent initialization
+// Code saved in FIREBASE_SETUP.md for future reference
 
 "use server";
 import type {InterviewSession} from './types';
