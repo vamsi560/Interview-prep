@@ -87,31 +87,46 @@ export default function StartInterviewPage() {
   async function onSubmit(values: FormValues) {
     setIsStarting(true);
     
-    const initialSession = {
-      role: values.role,
-      score: 0,
-      duration: "0",
-    };
+    try {
+      // Add timeout for session creation
+      const sessionTimeout = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session creation timed out')), 30000) // 30 seconds
+      );
 
-    const result = await createInterviewSession(initialSession);
+      const createSessionPromise = async () => {
+        const initialSession = {
+          role: values.role,
+          score: 0,
+          duration: "0",
+        };
+        return await createInterviewSession(initialSession);
+      };
 
-    if (result.success && result.id) {
-      const params = new URLSearchParams({
-        role: values.role,
-        difficulty: values.difficulty,
-        interviewId: result.id,
-        ...(values.topics && values.topics.length > 0 && { topics: values.topics.join(',') }),
-        ...(values.questionBank && { questionBank: values.questionBank }),
-      });
+      const result = await Promise.race([createSessionPromise(), sessionTimeout]);
+
+      if (result.success && result.id) {
+        const params = new URLSearchParams({
+          role: values.role,
+          difficulty: values.difficulty,
+          interviewId: result.id,
+          ...(values.topics && values.topics.length > 0 && { topics: values.topics.join(',') }),
+          ...(values.questionBank && { questionBank: values.questionBank }),
+        });
       router.push(`/interview?${params.toString()}`);
-    } else {
+      } else {
+        throw new Error(result.error || "Failed to create interview session.");
+      }
+    } catch (error) {
+      console.error('Error starting interview:', error);
       toast({
-        title: "Error starting interview",
-        description: "Could not create an interview session. Please try again.",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to start interview. Please try again.",
         variant: "destructive",
       });
+    } finally {
       setIsStarting(false);
     }
+  }
   }
 
   return (

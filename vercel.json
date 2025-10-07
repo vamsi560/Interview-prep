@@ -7,8 +7,11 @@
   },
   "regions": ["iad1"],
   "functions": {
-    "src/app/**/*.ts": {
-      "maxDuration": 300
+    "src/app/actions.ts": {
+      "maxDuration": 60
+    },
+    "src/app/**/page.tsx": {
+      "maxDuration": 30
     }
   }
 }

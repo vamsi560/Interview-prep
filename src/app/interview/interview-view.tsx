@@ -6,8 +6,14 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { getAIQuestion, getAIFeedback, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
+  Card      const fetchFirstQuestion = async () => {
+        setIsLoading(true);
+        
+        try {
+          // Add timeout for AI question generation
+          const questionTimeout = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Question generation timed out')), 45000) // 45 seconds
+          );\n\n          const questionPromise = getAIQuestion({ \n            role: newSettings.role, \n            difficultyLevel: newSettings.difficulty, \n            questionBank: newSettings.questionBank \n          });\n\n          const res = await Promise.race([questionPromise, questionTimeout]);\n          \n          if(res.success && res.data){\n            const firstMessage: Message = { id: Date.now().toString(), role: \"ai\", content: res.data.question };\n            setMessages([firstMessage]);\n            speak(firstMessage.content);\n          } else {\n            throw new Error(res.error || \"Failed to generate first question.\");\n          }\n        } catch (error) {\n          console.error('Error fetching first question:', error);\n          \n          // Fallback to a default question if AI fails\n          const fallbackQuestion = `Hello! Welcome to your ${newSettings.role} interview. Let's start with a simple question: Could you please introduce yourself and tell me about your background?`;\n          \n          const firstMessage: Message = { id: Date.now().toString(), role: \"ai\", content: fallbackQuestion };\n          setMessages([firstMessage]);\n          speak(fallbackQuestion);\n          \n          toast({ \n            title: \"Using Fallback Question\", \n            description: \"AI question generation is slow. Started with a basic question.\",\n            variant: \"default\"\n          });\n        } finally {\n          setIsLoading(false);\n        }\n      };\n      fetchFirstQuestion();nt,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -364,9 +370,12 @@ export function InterviewView() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-full">
+      <div className="flex flex-col justify-center items-center h-full space-y-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4 text-lg">Preparing your interview...</p>
+        <div className="text-center">
+          <p className="text-lg font-medium">Preparing your interview...</p>
+          <p className="text-sm text-muted-foreground">This may take up to 45 seconds</p>
+        </div>
       </div>
     );
   }

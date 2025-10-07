@@ -31,8 +31,17 @@ const getAIQuestionInputSchema = z.object({
 
 export async function getAIQuestion(input: AIInterviewerAsksQuestionsInput) {
   try {
-    const parsedInput = getAIQuestionInputSchema.parse(input);
-    const result = await aiInterviewerAsksQuestions(parsedInput);
+    // Add timeout to prevent long-running AI requests
+    const aiTimeout = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('AI question generation timed out')), 30000) // 30 seconds
+    );
+
+    const generateQuestionPromise = async () => {
+      const parsedInput = getAIQuestionInputSchema.parse(input);
+      return await aiInterviewerAsksQuestions(parsedInput);
+    };
+
+    const result = await Promise.race([generateQuestionPromise(), aiTimeout]);
     return { success: true, data: result };
   } catch (error) {
     console.error("Error in getAIQuestion:", error);
