@@ -102,7 +102,7 @@ export default function StartInterviewPage() {
         return await createInterviewSession(initialSession);
       };
 
-      const result = await Promise.race([createSessionPromise(), sessionTimeout]);
+      const result = await Promise.race([createSessionPromise(), sessionTimeout]) as any;
 
       if (result.success && result.id) {
         const params = new URLSearchParams({

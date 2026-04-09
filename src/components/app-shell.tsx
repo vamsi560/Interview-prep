@@ -9,7 +9,8 @@ import {
   Play,
   Settings,
 } from "lucide-react";
-import { Logo } from "@/components/icons";
+import Image from "next/image";
+import organizationLogo from "@/assets/VMLogoWhite.png";
 import {
   Sidebar,
   SidebarContent,
@@ -46,9 +47,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
         <Sidebar>
           <SidebarHeader>
-            <div className="flex items-center gap-2">
-              <Logo className="size-7 text-primary" />
-              <span className="text-lg font-semibold text-sidebar-foreground">
+            <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-md">
+              <Image src={organizationLogo} alt="Organization Logo" className="h-7 w-auto object-contain" />
+              <span className="text-lg font-semibold text-primary-foreground">
                 ProPrep AI
               </span>
             </div>

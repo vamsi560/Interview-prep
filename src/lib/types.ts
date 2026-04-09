@@ -29,4 +29,5 @@ export type InterviewSession = {
   feedback: Feedback[];
   transcript: Message[];
   summaryReport?: GenerateSummaryReportOutput | null;
+  violations?: { timestamp: string; message: string }[];
 };

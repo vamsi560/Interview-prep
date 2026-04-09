@@ -6,6 +6,10 @@ import {
   type AIInterviewerAsksQuestionsInput,
 } from "@/ai/flows/ai-interviewer-asks-questions";
 import {
+  validateAadharFlow,
+  type ValidateAadharInput,
+} from "@/ai/flows/validate-aadhar";
+import {
   analyzeUserResponse,
   type AnalyzeUserResponseInput,
 } from "@/ai/flows/ai-analyzes-user-responses";
@@ -69,41 +73,38 @@ export async function getAIFeedback(input: AnalyzeUserResponseInput) {
   }
 }
 
-export async function createInterviewSession(session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport'>) {
-    // Quick bypass for Firebase issues - always return success with a local ID
+import { MockSessions } from "@/lib/mock-db";
+
+export async function createInterviewSession(session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport' | 'violations'>) {
     const localId = `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log('Creating interview session with ID:', localId);
+    MockSessions.push({
+      ...session,
+      id: localId,
+      date: new Date().toISOString(),
+      feedback: [],
+      transcript: [],
+      violations: [],
+    });
     return { success: true, id: localId };
-    
-    // Uncomment below when Firebase is properly configured:
-    // return await addInterviewSession(session);
 }
 
 export async function saveInterviewSession(id: string, session: Omit<InterviewSession, 'id' | 'date' | 'role' | 'summaryReport'>) {
-    // Quick bypass for Firebase issues - always return success
-    console.log('Saving interview session:', id, session);
-    return { success: true, id };
-    
-    // Uncomment below when Firebase is properly configured:
-    // return await updateInterviewSession(id, session);
+    console.log('Saving interview session:', id);
+    const index = MockSessions.findIndex(s => s.id === id);
+    if(index > -1) {
+       MockSessions[index] = { ...MockSessions[index], ...session };
+       return { success: true, id };
+    }
+    return { success: false, error: "Not found" };
 }
 
 export async function fetchInterviewSessions() {
-    // Quick bypass for Firebase issues - return empty array
-    console.log('Fetching interview sessions - returning empty array due to Firebase bypass');
-    return [];
-    
-    // Uncomment below when Firebase is properly configured:
-    // return await getInterviewSessions();
+    return MockSessions;
 }
 
 export async function fetchInterviewSession(id: string) {
-    // Quick bypass for Firebase issues - return null
-    console.log('Fetching interview session:', id, '- returning null due to Firebase bypass');
-    return null;
-    
-    // Uncomment below when Firebase is properly configured:
-    // return await getInterviewSession(id);
+    return MockSessions.find(s => s.id === id) || null;
 }
 
 
@@ -157,5 +158,51 @@ export async function generateAndSaveSummaryReport(interviewId: string) {
     console.error("Error generating or saving summary report:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
     return { success: false, error: errorMessage };
+  }
+}
+
+export async function validateAadharAction(input: ValidateAadharInput) {
+  try {
+    const result = await validateAadharFlow(input);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error validating aadhar:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function uploadRecordingChunk(formData: FormData) {
+  const interviewId = formData.get("interviewId") as string;
+  const chunkIndex = parseInt(formData.get("chunkIndex") as string, 10);
+  const chunkFile = formData.get("chunk") as File | null;
+  
+  if (!chunkFile) return { success: false, error: "No chunk file" };
+
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) {
+      console.log(`[Mock Azure Upload] Received chunk ${chunkIndex} for ${interviewId}, size: ${chunkFile.size} bytes`);
+      return { success: true };
+  }
+
+  try {
+      const { BlobServiceClient } = await import("@azure/storage-blob");
+      const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+      const containerClient = blobServiceClient.getContainerClient("interview-recordings");
+      await containerClient.createIfNotExists();
+
+      const blobName = `${interviewId}.webm`;
+      const appendBlobClient = containerClient.getAppendBlobClient(blobName);
+      
+      if (chunkIndex === 0) {
+          await appendBlobClient.createIfNotExists();
+      }
+
+      const buffer = Buffer.from(await chunkFile.arrayBuffer());
+      await appendBlobClient.appendBlock(buffer, buffer.length);
+      
+      return { success: true };
+  } catch (error) {
+      console.error("Error uploading chunk to azure:", error);
+      return { success: false, error: String(error) };
   }
 }

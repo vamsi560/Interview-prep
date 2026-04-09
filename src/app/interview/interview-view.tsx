@@ -3,7 +3,7 @@
 
 import { useSearchParams } from "next/navigation";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getAIQuestion, getAIFeedback, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport } from "@/app/actions";
+import { getAIQuestion, getAIFeedback, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,24 +21,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Toast } from "@/components/ui/toast";
 import { UserResponseIndicator } from "@/components/user-response-indicator";
 import { useRouter } from "next/navigation";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import Editor from "@monaco-editor/react";
 
 
 const useSpeech = (
   onSpeechResult: (result: string) => void,
-  toast: (options: Omit<Toast, 'id'>) => void
+  toast: (options: any) => void
 ) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any | null>(null);
 
   useEffect(() => {
     const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.warn("Speech recognition not supported in this browser.");
       toast({
@@ -53,13 +53,13 @@ const useSpeech = (
     recognition.interimResults = false;
     recognition.lang = "en-US";
     
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       onSpeechResult(transcript);
       setIsListening(false);
     };
 
-    recognition.onerror = (event) => {
+    recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
        if (event.error === 'network') {
         toast({
@@ -162,8 +162,15 @@ export function InterviewView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const interviewStartTime = useRef<Date | null>(null);
   const proctoringIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunkIndexRef = useRef<number>(0);
+  const violationsRef = useRef<{ timestamp: string; message: string }[]>([]);
+  const [codeSnippet, setCodeSnippet] = useState("");
 
   const handleInterviewCompletion = useCallback(async () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
     if (!interviewId || !interviewStartTime.current) return;
   
     const endTime = new Date();
@@ -176,6 +183,7 @@ export function InterviewView() {
       duration: durationInMinutes.toString(),
       feedback: allFeedback,
       transcript: messages,
+      violations: violationsRef.current,
     };
   
     const result = await saveInterviewSession(interviewId, sessionData);
@@ -210,13 +218,17 @@ export function InterviewView() {
     }
   }, [interviewId, allFeedback, messages, router, toast]);
 
-  const processUserResponse = useCallback(async (response: string, speakCallback: (text: string) => void) => {
-    if (!response.trim()) return;
+  const processUserResponse = useCallback(async (responseText: string, codeText: string, speakCallback: (text: string) => void) => {
+    let finalPayload = responseText;
+    if (codeText.trim().length > 0) {
+        finalPayload += `\n\n[Accompanying Code Submitted]:\n${codeText}`;
+    }
+    if (!finalPayload.trim()) return;
 
     setUserText("");
     setIsThinking(true);
     setCurrentFeedback(null);
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: response };
+    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: finalPayload };
     setMessages(prev => [...prev, userMessage]);
 
     const lastAIMessage = messages.findLast(m => m.role === 'ai');
@@ -226,32 +238,39 @@ export function InterviewView() {
         return;
     }
 
-    const [feedbackRes, questionRes] = await Promise.all([
-        getAIFeedback({ userResponse: response, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`}),
-        getAIQuestion({
-            role: settings.role,
-            difficultyLevel: settings.difficulty,
-            questionBank: settings.questionBank,
-            previousQuestions: messages.filter(m => m.role === 'ai').map(m => m.content)
-        })
-    ]);
-
+    const feedbackRes = await getAIFeedback({ userResponse: finalPayload, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`});
+    
+    let nextDifficulty = settings.difficulty;
     if(feedbackRes.success && feedbackRes.data){
         setCurrentFeedback(feedbackRes.data);
         setAllFeedback(prev => [...prev, feedbackRes.data]);
+        
+        // Adaptive logic
+        if (feedbackRes.data.score > 85) nextDifficulty = "hard";
+        else if (feedbackRes.data.score < 50) nextDifficulty = "easy";
+        
+        setSettings(prev => prev ? { ...prev, difficulty: nextDifficulty } : null);
     } else {
         toast({ title: "Error", description: feedbackRes.error || "Failed to get feedback.", variant: "destructive" });
     }
     
+    const questionRes = await getAIQuestion({
+        role: settings.role,
+        difficultyLevel: nextDifficulty,
+        questionBank: settings.questionBank,
+        previousQuestions: messages.filter(m => m.role === 'ai').map(m => m.content)
+    });
+
     if(questionRes.success && questionRes.data){
-      if(questionRes.data.isComplete) {
-        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: questionRes.data.question };
+      const data = questionRes.data as any;
+      if(data.isComplete) {
+        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.question };
         setMessages(prev => [...prev, aiMessage]);
         speakCallback(aiMessage.content);
         // Don't await this, let it run in the background after the final message is spoken
         handleInterviewCompletion();
       } else {
-        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: questionRes.data.question };
+        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.question };
         setMessages(prev => [...prev, aiMessage]);
         speakCallback(aiMessage.content);
       }
@@ -263,7 +282,7 @@ export function InterviewView() {
   }, [messages, settings, toast, handleInterviewCompletion]);
 
   const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(
-    (text) => processUserResponse(text, speak), 
+    (text) => processUserResponse(text, codeSnippet, speak), 
     toast
   );
 
@@ -278,6 +297,12 @@ export function InterviewView() {
         const dataUri = canvas.toDataURL("image/jpeg");
         const res = await checkProctoring({ videoFrameDataUri: dataUri });
         if (res.success && res.data?.hasViolation) {
+          const timestamp = interviewStartTime.current
+            ? new Date(Date.now() - interviewStartTime.current.getTime()).toISOString().substring(14, 19)
+            : "00:00";
+            
+          violationsRef.current.push({ timestamp, message: res.data.warningMessage });
+          
           toast({
             title: "Proctoring Warning",
             description: res.data.warningMessage,
@@ -289,13 +314,38 @@ export function InterviewView() {
   }, [toast]);
 
   useEffect(() => {
+    const id = searchParams.get("interviewId");
+
     const getCameraPermission = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({video: true});
+        const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
         setHasCameraPermission(true);
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+        }
+
+        if (id) {
+            let mediaRecorder;
+            try {
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+            } catch (e) {
+                mediaRecorder = new MediaRecorder(stream);
+            }
+            mediaRecorderRef.current = mediaRecorder;
+
+            mediaRecorder.ondataavailable = async (e) => {
+                if (e.data.size > 0 && id) {
+                    const formData = new FormData();
+                    formData.append("interviewId", id);
+                    formData.append("chunkIndex", chunkIndexRef.current.toString());
+                    formData.append("chunk", new File([e.data], "chunk.webm", { type: e.data.type }));
+                    chunkIndexRef.current++;
+                    
+                    uploadRecordingChunk(formData).catch(err => console.error("Upload chunk error:", err));
+                }
+            };
+            mediaRecorder.start(5000); // 5 sec chunks
         }
 
         proctoringIntervalRef.current = setInterval(runProctoring, 5000);
@@ -316,8 +366,11 @@ export function InterviewView() {
         if(proctoringIntervalRef.current) {
             clearInterval(proctoringIntervalRef.current);
         }
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            mediaRecorderRef.current.stop();
+        }
     }
-  }, [toast, runProctoring]);
+  }, [toast, runProctoring, searchParams]);
 
 
   useEffect(() => {
@@ -349,7 +402,7 @@ export function InterviewView() {
             previousQuestions: [] 
           });
 
-          const res = await Promise.race([questionPromise, questionTimeout]);
+          const res = await Promise.race([questionPromise, questionTimeout]) as any;
           
           if(res.success && res.data){
             const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.question };
@@ -436,7 +489,7 @@ export function InterviewView() {
             {messages.map((message) => (
               <div key={message.id} className={`flex items-start gap-4 ${message.role === 'user' ? 'justify-end' : ''}`}>
                 {message.role === 'ai' && (
-                  <Avatar>
+                  <Avatar className={isSpeaking && isLastMessageFromAI && message.id === messages[messages.length-1].id ? "ring-4 ring-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.5)]" : ""}>
                     <AvatarImage src={aiAvatar?.imageUrl} data-ai-hint={aiAvatar?.imageHint} />
                     <AvatarFallback>AI</AvatarFallback>
                   </Avatar>
@@ -472,6 +525,18 @@ export function InterviewView() {
         </ScrollArea>
         {!isInterviewComplete && (
             <div className="flex flex-col gap-2">
+                {(settings?.role.toLowerCase().includes("engineer") || settings?.role.toLowerCase().includes("developer") || settings?.role.toLowerCase().includes("data")) && (
+                  <div className="flex flex-col border rounded-md overflow-hidden">
+                    <Editor
+                      height="200px"
+                      defaultLanguage="javascript"
+                      theme="vs-dark"
+                      value={codeSnippet}
+                      onChange={(value) => setCodeSnippet(value || "")}
+                      options={{ minimap: { enabled: false } }}
+                    />
+                  </div>
+                )}
                 <Textarea 
                     value={userText}
                     onChange={(e) => setUserText(e.target.value)}
@@ -488,7 +553,7 @@ export function InterviewView() {
                         <Button onClick={toggleListening} variant={isListening ? 'destructive' : 'outline'} size="icon" disabled={isThinking || isSpeaking}>
                             {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                         </Button>
-                        <Button onClick={() => processUserResponse(userText, speak)} disabled={!userText || isThinking || isListening || isSpeaking}>
+                        <Button onClick={() => processUserResponse(userText, codeSnippet, speak)} disabled={(!userText && !codeSnippet) || isThinking || isListening || isSpeaking}>
                             <Send className="h-5 w-5 mr-2"/> Send
                         </Button>
                     </div>
