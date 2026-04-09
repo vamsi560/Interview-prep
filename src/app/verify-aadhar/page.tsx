@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { validateAadharAction, createInterviewSession } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getMockCandidate } from "@/lib/mock-db";
 
-export default function VerifyAadharPage() {
+function VerifyAadharContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -175,5 +175,19 @@ export default function VerifyAadharPage() {
         </Card>
       </div>
     </AppShell>
+  );
+}
+
+export default function VerifyAadharPage() {
+  return (
+    <Suspense fallback={
+      <AppShell>
+        <div className="flex h-full w-full items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+      </AppShell>
+    }>
+      <VerifyAadharContent />
+    </Suspense>
   );
 }
