@@ -12,6 +12,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@azure-rest/ai-vision-image-analysis": "^1.0.0-beta.3",
+    "@azure/ai-form-recognizer": "^5.1.0",
+    "@azure/core-auth": "^1.10.1",
+    "@azure/core-paging": "^1.6.2",
     "@azure/storage-blob": "^12.31.0",
     "@genkit-ai/googleai": "^1.14.1",
     "@genkit-ai/next": "^1.14.1",
@@ -46,6 +50,7 @@
     "embla-carousel-react": "^8.6.0",
     "genkit": "^1.14.1",
     "lucide-react": "^0.475.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.49.0",
     "next": "15.3.8",
     "patch-package": "^8.0.0",
     "react": "^18.3.1",

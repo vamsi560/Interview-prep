@@ -1,28 +1,38 @@
-
 "use server";
 
 import {
   aiInterviewerAsksQuestions,
   type AIInterviewerAsksQuestionsInput,
 } from "@/ai/flows/ai-interviewer-asks-questions";
-import {
-  validateAadharFlow,
-  type ValidateAadharInput,
-} from "@/ai/flows/validate-aadhar";
-import {
-  analyzeUserResponse,
-  type AnalyzeUserResponseInput,
-} from "@/ai/flows/ai-analyzes-user-responses";
+import { verifyAadharWithADI } from "@/lib/azure-id-verify";
 import { 
-  proctoring, 
-  type ProctoringInput 
-} from "@/ai/flows/proctoring-flow";
+  analyzeUserResponse, 
+  type AnalyzeUserResponseInput 
+} from "@/ai/flows/ai-analyzes-user-responses";
+import { analyzeFrameWithAzure } from "@/lib/azure-vision-proctor";
 import { 
   generateSummaryReport,
   type GenerateSummaryReportInput,
 } from "@/ai/flows/generate-summary-report";
 
 import { z } from "zod";
+import { MockSessions } from "@/lib/mock-db";
+
+const MAX_RETRIES = 2;
+const INITIAL_DELAY = 1000;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delay = INITIAL_DELAY): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries > 0 && String(error).includes("503")) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
 // Firebase imports commented out - using local implementations
 // import { addInterviewSession, getInterviewSession, getInterviewSessions, updateInterviewSession } from "@/lib/firestore";
 import type { InterviewSession } from "@/lib/types";
@@ -43,7 +53,7 @@ export async function getAIQuestion(input: AIInterviewerAsksQuestionsInput) {
 
     const generateQuestionPromise = async () => {
       const parsedInput = getAIQuestionInputSchema.parse(input);
-      return await aiInterviewerAsksQuestions(parsedInput);
+      return await withRetry(() => aiInterviewerAsksQuestions(parsedInput));
     };
 
     const result = await Promise.race([generateQuestionPromise(), aiTimeout]);
@@ -64,7 +74,7 @@ const getAIFeedbackInputSchema = z.object({
 export async function getAIFeedback(input: AnalyzeUserResponseInput) {
   try {
     const parsedInput = getAIFeedbackInputSchema.parse(input);
-    const result = await analyzeUserResponse(parsedInput);
+    const result = await withRetry(() => analyzeUserResponse(parsedInput));
     return { success: true, data: result };
   } catch (error) {
     console.error("Error in getAIFeedback:", error);
@@ -72,8 +82,6 @@ export async function getAIFeedback(input: AnalyzeUserResponseInput) {
     return { success: false, error: errorMessage };
   }
 }
-
-import { MockSessions } from "@/lib/mock-db";
 
 export async function createInterviewSession(session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport' | 'violations'>) {
     const localId = `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -112,10 +120,9 @@ const proctoringInputSchema = z.object({
   videoFrameDataUri: z.string(),
 });
 
-export async function checkProctoring(input: ProctoringInput) {
+export async function checkProctoring(input: { videoFrameDataUri: string }) {
   try {
-    const parsedInput = proctoringInputSchema.parse(input);
-    const result = await proctoring(parsedInput);
+    const result = await analyzeFrameWithAzure(input.videoFrameDataUri);
     return { success: true, data: result };
   } catch (error) {
     console.error("Error in checkProctoring:", error);
@@ -161,9 +168,9 @@ export async function generateAndSaveSummaryReport(interviewId: string) {
   }
 }
 
-export async function validateAadharAction(input: ValidateAadharInput) {
+export async function validateAadharAction(input: { imageUri: string }) {
   try {
-    const result = await validateAadharFlow(input);
+    const result = await verifyAadharWithADI(input.imageUri);
     return { success: true, data: result };
   } catch (error) {
     console.error("Error validating aadhar:", error);

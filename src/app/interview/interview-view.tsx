@@ -18,132 +18,13 @@ import type { InterviewSettings, Message, Feedback } from "@/lib/types";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useAzureSpeech } from "@/hooks/use-azure-speech";
 import { UserResponseIndicator } from "@/components/user-response-indicator";
 import { useRouter } from "next/navigation";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import Editor from "@monaco-editor/react";
+import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
-
-const useSpeech = (
-  onSpeechResult: (result: string) => void,
-  toast: (options: any) => void
-) => {
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
-  const recognitionRef = useRef<any | null>(null);
-
-  useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("Speech recognition not supported in this browser.");
-      toast({
-        title: "Speech Recognition Not Supported",
-        description: "Your browser does not support speech recognition. Please type your responses.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = "en-US";
-    
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      onSpeechResult(transcript);
-      setIsListening(false);
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
-       if (event.error === 'network') {
-        toast({
-            title: "Network Error",
-            description: "Speech recognition service could not be reached. Please check your network connection or try again.",
-            variant: "destructive",
-        });
-      } else if (event.error === 'no-speech') {
-        toast({
-            title: "No Speech Detected",
-            description: "I didn't hear anything. Please try speaking again.",
-            variant: "destructive",
-        });
-      }
-      else {
-        toast({
-            title: "Speech Recognition Error",
-            description: `An error occurred: ${event.error}. Please try again.`,
-            variant: "destructive",
-        });
-      }
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-        setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      recognition.stop();
-    };
-  }, [onSpeechResult, toast]);
-
-  const toggleListening = () => {
-    if (!recognitionRef.current) return;
-    if (isListening) {
-      recognitionRef.current.stop();
-    } else {
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch(e) {
-        setIsListening(false);
-        console.error("Could not start recognition", e);
-        toast({
-            title: "Could not start listening",
-            description: "There was an issue starting the microphone. Please check browser permissions.",
-            variant: "destructive",
-        })
-      }
-    }
-  };
-
-  const speak = useCallback((text: string) => {
-    if (!isVoiceEnabled || !window.speechSynthesis) return;
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    const indianMaleVoice = voices.find(voice => voice.lang === 'en-IN' && voice.name.includes('Male'));
-    if (indianMaleVoice) {
-      utterance.voice = indianMaleVoice;
-    } else {
-        const indianVoice = voices.find(voice => voice.lang === 'en-IN');
-        if (indianVoice) {
-            utterance.voice = indianVoice;
-        }
-    }
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }, [isVoiceEnabled]);
-  
-  const toggleVoice = () => {
-      if (isSpeaking) {
-          window.speechSynthesis.cancel();
-          setIsSpeaking(false);
-      }
-      setIsVoiceEnabled(prev => !prev);
-  }
-
-  return { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice };
-};
 
 export function InterviewView() {
   const router = useRouter();
@@ -218,17 +99,12 @@ export function InterviewView() {
     }
   }, [interviewId, allFeedback, messages, router, toast]);
 
-  const processUserResponse = useCallback(async (responseText: string, codeText: string, speakCallback: (text: string) => void) => {
-    let finalPayload = responseText;
-    if (codeText.trim().length > 0) {
-        finalPayload += `\n\n[Accompanying Code Submitted]:\n${codeText}`;
-    }
-    if (!finalPayload.trim()) return;
+  const processUserResponse = useCallback(async (responseText: string, speakCallback: (text: string) => void) => {
+    if (!responseText.trim()) return;
 
-    setUserText("");
     setIsThinking(true);
     setCurrentFeedback(null);
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: finalPayload };
+    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: responseText };
     setMessages(prev => [...prev, userMessage]);
 
     const lastAIMessage = messages.findLast(m => m.role === 'ai');
@@ -238,7 +114,7 @@ export function InterviewView() {
         return;
     }
 
-    const feedbackRes = await getAIFeedback({ userResponse: finalPayload, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`});
+    const feedbackRes = await getAIFeedback({ userResponse: responseText, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`});
     
     let nextDifficulty = settings.difficulty;
     if(feedbackRes.success && feedbackRes.data){
@@ -281,8 +157,16 @@ export function InterviewView() {
     setIsThinking(false);
   }, [messages, settings, toast, handleInterviewCompletion]);
 
-  const { isListening, toggleListening, speak, isSpeaking, isVoiceEnabled, toggleVoice } = useSpeech(
-    (text) => processUserResponse(text, codeSnippet, speak), 
+  const { 
+    isListening, 
+    isSpeaking, 
+    isVoiceEnabled, 
+    currentTranscript, 
+    toggleVoice, 
+    speak, 
+    startContinuous 
+  } = useAzureSpeech(
+    (text) => processUserResponse(text, speak), 
     toast
   );
 
@@ -408,6 +292,7 @@ export function InterviewView() {
             const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.question };
             setMessages([firstMessage]);
             speak(firstMessage.content);
+            // Start listening after AI speaks the first question
           } else {
             throw new Error(res.error || "Failed to generate first question.");
           }
@@ -428,6 +313,8 @@ export function InterviewView() {
           });
         } finally {
           setIsLoading(false);
+          // Small delay before starting continuous listening
+          setTimeout(startContinuous, 4000); 
         }
       };
       fetchFirstQuestion();
@@ -524,38 +411,27 @@ export function InterviewView() {
           </div>
         </ScrollArea>
         {!isInterviewComplete && (
-            <div className="flex flex-col gap-2">
-                {(settings?.role.toLowerCase().includes("engineer") || settings?.role.toLowerCase().includes("developer") || settings?.role.toLowerCase().includes("data")) && (
-                  <div className="flex flex-col border rounded-md overflow-hidden">
-                    <Editor
-                      height="200px"
-                      defaultLanguage="javascript"
-                      theme="vs-dark"
-                      value={codeSnippet}
-                      onChange={(value) => setCodeSnippet(value || "")}
-                      options={{ minimap: { enabled: false } }}
-                    />
-                  </div>
-                )}
-                <Textarea 
-                    value={userText}
-                    onChange={(e) => setUserText(e.target.value)}
-                    placeholder="Type your answer here or use the microphone..."
-                    className="w-full text-base"
-                    rows={3}
-                    disabled={isThinking || isListening}
-                />
+            <div className="flex flex-col gap-4 mt-6">
+                <div className={`p-4 rounded-xl border-2 transition-all duration-500 ${isListening ? "border-primary bg-primary/5 animate-pulse" : "border-muted bg-muted/20"}`}>
+                   <div className="flex items-center gap-3 mb-3">
+                      <div className={`size-3 rounded-full ${isListening ? "bg-red-500 animate-ping" : "bg-muted-foreground"}`} />
+                      <span className="text-sm font-semibold tracking-wider uppercase opacity-70">
+                        {isListening ? "Live Transcribing" : "Microphone Paused"}
+                      </span>
+                   </div>
+                   <p className="text-xl font-medium min-h-[3rem] text-foreground/80 italic">
+                      {currentTranscript || "Waiting for your response..."}
+                   </p>
+                </div>
+
                 <div className="flex items-center justify-between">
                     <Button onClick={toggleVoice} variant="ghost" size="icon" disabled={isSpeaking}>
                         {isVoiceEnabled ? <Volume2 className="h-5 w-5"/> : <VolumeX className="h-5 w-5"/>}
                     </Button>
                     <div className="flex gap-2">
-                        <Button onClick={toggleListening} variant={isListening ? 'destructive' : 'outline'} size="icon" disabled={isThinking || isSpeaking}>
-                            {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                        </Button>
-                        <Button onClick={() => processUserResponse(userText, codeSnippet, speak)} disabled={(!userText && !codeSnippet) || isThinking || isListening || isSpeaking}>
-                            <Send className="h-5 w-5 mr-2"/> Send
-                        </Button>
+                        <div className="bg-primary/10 text-primary px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest">
+                            Voice Only Mode Active
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,66 @@
+import { DocumentAnalysisClient, AzureKeyCredential } from "@azure/ai-form-recognizer";
+
+const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || "";
+const key = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY || "";
+
+export async function verifyAadharWithADI(imageDataUri: string) {
+  if (!endpoint || !key) {
+    console.warn("Azure Document Intelligence credentials missing. Falling back to mock success for development.");
+    return { verified: true, message: "[Mock] Azure Credentials Missing - Permitting Access", aadharNumber: "123456789012" };
+  }
+
+  try {
+    // 1. Prepare the buffer from Data URI
+    const base64Data = imageDataUri.split(",")[1];
+    const buffer = Buffer.from(base64Data, "base64");
+
+    // 2. Initialize Client
+    const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key));
+
+    // 3. Analyze Document using prebuilt-idDocument
+    const poller = await client.beginAnalyzeDocument("prebuilt-idDocument", buffer);
+    const { documents } = await poller.pollUntilDone();
+
+    if (!documents || documents.length === 0) {
+      return { verified: false, message: "No document detected in the frame." };
+    }
+
+    const doc = documents[0];
+    const fields = doc.fields as any;
+
+    // 4. Extract Aadhar Number (DocumentNumber) and Name (FirstName/LastName)
+    const aadharNumber = fields.DocumentNumber?.valueString?.replace(/\s/g, "") || fields.DocumentNumber?.content?.replace(/\s/g, "");
+    const firstName = fields.FirstName?.valueString || fields.FirstName?.content;
+    const lastName = fields.LastName?.valueString || fields.LastName?.content;
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
+
+    console.log("ADI Extracted:", { aadharNumber, fullName });
+
+    // 5. Validation Logic
+    // Success if 12-digit number found OR if a Name is found (User fallback requirement)
+    const hasValidAadhar = aadharNumber && /^\d{12}$/.test(aadharNumber);
+    const hasName = !!fullName;
+
+    if (hasValidAadhar || hasName) {
+      let successMessage = "ID Verified successfully.";
+      if (!hasValidAadhar && hasName) {
+        successMessage = `Verified via Name: ${fullName}`;
+      } else if (hasValidAadhar) {
+        successMessage = `Verified Aadhar: ${aadharNumber.substring(0,4)} XXXX XXXX`;
+      }
+
+      return {
+        verified: true,
+        message: successMessage,
+        aadharNumber: aadharNumber || "N/A",
+        name: fullName || "N/A"
+      };
+    }
+
+    return { verified: false, message: "Could not extract Aadhar Number or Name. Please try again." };
+
+  } catch (error) {
+    console.error("Azure Document Intelligence Error:", error);
+    return { verified: false, message: "Error communicating with verification service." };
+  }
+}
