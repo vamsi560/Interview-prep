@@ -46,6 +46,7 @@ export function InterviewView() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunkIndexRef = useRef<number>(0);
   const violationsRef = useRef<{ timestamp: string; message: string }[]>([]);
+  const isMountedRef = useRef(true);
   const [codeSnippet, setCodeSnippet] = useState("");
 
   const handleInterviewCompletion = useCallback(async () => {
@@ -171,6 +172,7 @@ export function InterviewView() {
   );
 
   const runProctoring = useCallback(async () => {
+    if (!isMountedRef.current) return;
     if (videoRef.current && videoRef.current.readyState >= 3) {
       const canvas = document.createElement("canvas");
       canvas.width = videoRef.current.videoWidth;
@@ -229,7 +231,7 @@ export function InterviewView() {
                     uploadRecordingChunk(formData).catch(err => console.error("Upload chunk error:", err));
                 }
             };
-            mediaRecorder.start(5000); // 5 sec chunks
+            mediaRecorder.start(10000); // 10 sec chunks
         }
 
         proctoringIntervalRef.current = setInterval(runProctoring, 5000);
@@ -247,6 +249,7 @@ export function InterviewView() {
     getCameraPermission();
 
     return () => {
+        isMountedRef.current = false;
         if(proctoringIntervalRef.current) {
             clearInterval(proctoringIntervalRef.current);
         }
@@ -413,11 +416,23 @@ export function InterviewView() {
         {!isInterviewComplete && (
             <div className="flex flex-col gap-4 mt-6">
                 <div className={`p-4 rounded-xl border-2 transition-all duration-500 ${isListening ? "border-primary bg-primary/5 animate-pulse" : "border-muted bg-muted/20"}`}>
-                   <div className="flex items-center gap-3 mb-3">
-                      <div className={`size-3 rounded-full ${isListening ? "bg-red-500 animate-ping" : "bg-muted-foreground"}`} />
-                      <span className="text-sm font-semibold tracking-wider uppercase opacity-70">
-                        {isListening ? "Live Transcribing" : "Microphone Paused"}
-                      </span>
+                   <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`size-3 rounded-full ${isListening ? "bg-red-500 animate-ping" : "bg-muted-foreground"}`} />
+                        <span className="text-sm font-semibold tracking-wider uppercase opacity-70">
+                          {isListening ? "Live Transcribing" : "Microphone Paused"}
+                        </span>
+                      </div>
+                      {currentTranscript.length > 5 && !isThinking && (
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          onClick={() => processUserResponse(currentTranscript, speak)}
+                          className="h-8 text-xs font-bold"
+                        >
+                          Submit Now
+                        </Button>
+                      )}
                    </div>
                    <p className="text-xl font-medium min-h-[3rem] text-foreground/80 italic">
                       {currentTranscript || "Waiting for your response..."}

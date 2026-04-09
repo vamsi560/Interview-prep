@@ -185,23 +185,37 @@ export async function uploadRecordingChunk(formData: FormData) {
   
   if (!chunkFile) return { success: false, error: "No chunk file" };
 
+  const sasUrl = process.env.AZURE_STORAGE_SAS_URL;
   const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-  if (!connectionString) {
+
+  if (!sasUrl && !connectionString) {
       console.log(`[Mock Azure Upload] Received chunk ${chunkIndex} for ${interviewId}, size: ${chunkFile.size} bytes`);
       return { success: true };
   }
 
   try {
-      const { BlobServiceClient } = await import("@azure/storage-blob");
-      const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-      const containerClient = blobServiceClient.getContainerClient("interview-recordings");
-      await containerClient.createIfNotExists();
+      const { BlobServiceClient, ContainerClient } = await import("@azure/storage-blob");
+      let containerClient;
+
+      if (sasUrl) {
+        containerClient = new ContainerClient(sasUrl);
+      } else {
+        const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString!);
+        containerClient = blobServiceClient.getContainerClient("interview-recordings");
+        await containerClient.createIfNotExists();
+      }
 
       const blobName = `${interviewId}.webm`;
       const appendBlobClient = containerClient.getAppendBlobClient(blobName);
       
       if (chunkIndex === 0) {
-          await appendBlobClient.createIfNotExists();
+          // If using SAS, we assume container exists. 
+          // AppendBlob create session if not exists.
+          try {
+            await appendBlobClient.createIfNotExists();
+          } catch(e) {
+            console.warn("Append Blob creation check:", e);
+          }
       }
 
       const buffer = Buffer.from(await chunkFile.arrayBuffer());

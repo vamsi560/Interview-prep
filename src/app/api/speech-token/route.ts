@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const speechKey = process.env.AZURE_SPEECH_KEY;
-  const speechRegion = "eastus"; // Per the endpoint provided by user
+  const speechRegion = process.env.AZURE_SPEECH_REGION || "eastus"; 
 
   if (!speechKey) {
     console.error("Missing AZURE_SPEECH_KEY in environment");

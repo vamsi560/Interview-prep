@@ -26,6 +26,7 @@ export const useAzureSpeech = (
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const accumulatedTranscriptRef = useRef<string>("");
+  const isStartingRef = useRef<boolean>(false);
 
   const stopContinuous = useCallback(() => {
     if (recognizerRef.current) {
@@ -40,7 +41,8 @@ export const useAzureSpeech = (
   }, []);
 
   const startContinuous = useCallback(async () => {
-    if (recognizerRef.current) return;
+    if (recognizerRef.current || isStartingRef.current || isSpeaking) return;
+    isStartingRef.current = true;
 
     try {
       const res = await fetch('/api/speech-token');
@@ -88,14 +90,10 @@ export const useAzureSpeech = (
       recognizerRef.current = recognizer;
 
     } catch (error) {
-      console.error("Failed to start Azure Speech:", error);
-      toast({
-        title: "Microphone Error",
-        description: "Could not connect to Azure Speech services. Please try refreshing.",
-        variant: "destructive",
-      });
+    } finally {
+      isStartingRef.current = false;
     }
-  }, [onFinalResult, toast]);
+  }, [onFinalResult, toast, isSpeaking]);
 
   const speak = useCallback((text: string) => {
     if (!isVoiceEnabled || !window.speechSynthesis) return;
