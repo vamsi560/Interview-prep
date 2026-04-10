@@ -3,7 +3,8 @@
 
 import { useSearchParams } from "next/navigation";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getInitialQuestion, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk, processInterviewTurn, FALLBACK_QUESTIONS } from "@/app/actions";
+import { getInitialQuestion, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk, processInterviewTurn } from "@/app/actions";
+import { FALLBACK_QUESTIONS } from "@/lib/interview-constants";
 import { Button } from "@/components/ui/button";
 import {
   Card,
