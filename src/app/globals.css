@@ -89,3 +89,24 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  .animate-scanner {
+    animation: scanner 3s ease-in-out infinite;
+  }
+
+  @keyframes scanner {
+    0% {
+      top: 0%;
+      opacity: 0.1;
+    }
+    50% {
+      top: 100%;
+      opacity: 0.8;
+    }
+    100% {
+      top: 0%;
+      opacity: 0.1;
+    }
+  }
+}

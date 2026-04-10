@@ -3,7 +3,7 @@
 
 import { useSearchParams } from "next/navigation";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getAIQuestion, getAIFeedback, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk } from "@/app/actions";
+import { getInitialQuestion, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk, processInterviewTurn, FALLBACK_QUESTIONS } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -24,7 +24,6 @@ import { useRouter } from "next/navigation";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-
 
 export function InterviewView() {
   const router = useRouter();
@@ -48,6 +47,8 @@ export function InterviewView() {
   const violationsRef = useRef<{ timestamp: string; message: string }[]>([]);
   const isMountedRef = useRef(true);
   const [codeSnippet, setCodeSnippet] = useState("");
+  const [activeFallbackIndex, setActiveFallbackIndex] = useState(-1);
+  const [isFallbackMode, setIsFallbackMode] = useState(false);
 
   const handleInterviewCompletion = useCallback(async () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -101,62 +102,79 @@ export function InterviewView() {
   }, [interviewId, allFeedback, messages, router, toast]);
 
   const processUserResponse = useCallback(async (responseText: string, speakCallback: (text: string) => void) => {
-    if (!responseText.trim()) return;
+    if (!responseText.trim() || !settings) return;
 
     setIsThinking(true);
     setCurrentFeedback(null);
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: responseText };
     setMessages(prev => [...prev, userMessage]);
 
-    const lastAIMessage = messages.findLast(m => m.role === 'ai');
-    if (!lastAIMessage || !settings) {
+    // Consolidate current transcript for AI context
+    const currentTranscript = messages.map(m => ({ role: m.role as 'user' | 'ai', content: m.content }));
+
+    try {
+        const result = await processInterviewTurn({
+            role: settings.role,
+            difficulty: settings.difficulty,
+            questionBank: settings.questionBank,
+            transcript: currentTranscript,
+            userResponse: responseText
+        });
+
+        if (result.success && result.data) {
+            const data = result.data;
+            setCurrentFeedback({
+                feedback: data.feedback,
+                suggestions: data.suggestions,
+                score: data.score
+            });
+            setAllFeedback(prev => [...prev, {
+                feedback: data.feedback,
+                suggestions: data.suggestions,
+                score: data.score
+            }]);
+
+            const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.nextQuestion };
+            setMessages(prev => [...prev, aiMessage]);
+            speakCallback(aiMessage.content);
+
+            if (data.isComplete || data.nextQuestion.toLowerCase().includes("complete")) {
+                handleInterviewCompletion();
+            }
+            
+            setIsFallbackMode(false); // Clear fallback if AI recovers
+        } else {
+            throw new Error(result.error || "AI turn failed");
+        }
+    } catch (error) {
+        console.error("Switching to fallback mode:", error);
+        setIsFallbackMode(true);
+        
+        // Fallback Logic: Take the next question from the hardcoded list
+        const nextIndex = activeFallbackIndex + 1;
+        if (nextIndex < FALLBACK_QUESTIONS.length) {
+            const fallbackQuestion = FALLBACK_QUESTIONS[nextIndex];
+            setActiveFallbackIndex(nextIndex);
+            
+            const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: fallbackQuestion };
+            setMessages(prev => [...prev, aiMessage]);
+            speakCallback(aiMessage.content);
+            
+            toast({
+                title: "Network Congestion",
+                description: "AI is slow. Continuing with standard interview questions.",
+            });
+        } else {
+            // End interview if fallbacks are also exhausted
+            const endMessage: Message = { id: Date.now().toString(), role: 'ai', content: "Thank you. The interview is now complete." };
+            setMessages(prev => [...prev, endMessage]);
+            speakCallback(endMessage.content);
+            handleInterviewCompletion();
+        }
+    } finally {
         setIsThinking(false);
-        toast({ title: "Error", description: "Could not find the last AI question to process feedback.", variant: "destructive" });
-        return;
     }
-
-    const feedbackRes = await getAIFeedback({ userResponse: responseText, interviewQuestion: lastAIMessage.content, interviewContext: `Role: ${settings.role}`});
-    
-    let nextDifficulty = settings.difficulty;
-    if(feedbackRes.success && feedbackRes.data){
-        setCurrentFeedback(feedbackRes.data);
-        setAllFeedback(prev => [...prev, feedbackRes.data]);
-        
-        // Adaptive logic
-        if (feedbackRes.data.score > 85) nextDifficulty = "hard";
-        else if (feedbackRes.data.score < 50) nextDifficulty = "easy";
-        
-        setSettings(prev => prev ? { ...prev, difficulty: nextDifficulty } : null);
-    } else {
-        toast({ title: "Error", description: feedbackRes.error || "Failed to get feedback.", variant: "destructive" });
-    }
-    
-    const questionRes = await getAIQuestion({
-        role: settings.role,
-        difficultyLevel: nextDifficulty,
-        questionBank: settings.questionBank,
-        previousQuestions: messages.filter(m => m.role === 'ai').map(m => m.content)
-    });
-
-    if(questionRes.success && questionRes.data){
-      const data = questionRes.data as any;
-      if(data.isComplete) {
-        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.question };
-        setMessages(prev => [...prev, aiMessage]);
-        speakCallback(aiMessage.content);
-        // Don't await this, let it run in the background after the final message is spoken
-        handleInterviewCompletion();
-      } else {
-        const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.question };
-        setMessages(prev => [...prev, aiMessage]);
-        speakCallback(aiMessage.content);
-      }
-    } else {
-        toast({ title: "Error", description: questionRes.error || "Failed to get next question.", variant: "destructive" });
-    }
-
-    setIsThinking(false);
-  }, [messages, settings, toast, handleInterviewCompletion]);
+  }, [messages, settings, toast, handleInterviewCompletion, activeFallbackIndex]);
 
   const { 
     isListening, 
@@ -277,24 +295,19 @@ export function InterviewView() {
         setIsLoading(true);
         
         try {
-          // Add timeout for AI question generation
-          const questionTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Question generation timed out')), 45000) // 45 seconds
-          );
-
-          const questionPromise = getAIQuestion({ 
+          const questionPromise = getInitialQuestion({ 
             role: newSettings.role, 
-            difficultyLevel: newSettings.difficulty, 
-            questionBank: newSettings.questionBank,
-            previousQuestions: [] 
+            difficulty: newSettings.difficulty, 
+            questionBank: newSettings.questionBank
           });
 
-          const res = await Promise.race([questionPromise, questionTimeout]) as any;
+          const res = await questionPromise;
           
           if(res.success && res.data){
-            const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.question };
+            const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.nextQuestion };
             setMessages([firstMessage]);
             speak(firstMessage.content);
+            setActiveFallbackIndex(0); // Mark that we've used the first "logical" slot
             // Start listening after AI speaks the first question
           } else {
             throw new Error(res.error || "Failed to generate first question.");
@@ -302,16 +315,17 @@ export function InterviewView() {
         } catch (error) {
           console.error('Error fetching first question:', error);
           
-          // Fallback to a default question if AI fails
-          const fallbackQuestion = `Hello! Welcome to your ${newSettings.role} interview. Let's start with a simple question: Could you please introduce yourself and tell me about your background?`;
+          const fallbackQuestion = FALLBACK_QUESTIONS[0];
+          setActiveFallbackIndex(0);
+          setIsFallbackMode(true);
           
           const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: fallbackQuestion };
           setMessages([firstMessage]);
           speak(fallbackQuestion);
           
           toast({ 
-            title: "Using Fallback Question", 
-            description: "AI question generation is slow. Started with a basic question.",
+            title: "Using Fallback Track", 
+            description: "AI is busy. Started with a standard interview question.",
             variant: "default"
           });
         } finally {
@@ -485,6 +499,11 @@ export function InterviewView() {
           {!isThinking && !currentFeedback && (
               <div className="text-center text-muted-foreground h-full flex flex-col justify-center items-center">
                   <p>{isInterviewComplete ? "Interview has ended." : "Your feedback will appear here after you respond."}</p>
+                  {isFallbackMode && (
+                    <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-500 text-xs">
+                      AI is busy. Switched to standard interview track.
+                    </div>
+                  )}
               </div>
           )}
         </CardContent>

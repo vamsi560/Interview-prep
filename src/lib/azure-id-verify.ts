@@ -27,6 +27,7 @@ export async function verifyAadharWithADI(imageDataUri: string) {
 
     const doc = documents[0];
     const fields = doc.fields as any;
+    const documentType = doc.docType;
 
     // 4. Extract Aadhar Number (DocumentNumber) and Name (FirstName/LastName)
     const aadharNumber = fields.DocumentNumber?.valueString?.replace(/\s/g, "") || fields.DocumentNumber?.content?.replace(/\s/g, "");
@@ -34,17 +35,16 @@ export async function verifyAadharWithADI(imageDataUri: string) {
     const lastName = fields.LastName?.valueString || fields.LastName?.content;
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
 
-    console.log("ADI Extracted:", { aadharNumber, fullName });
+    console.log("ADI Extracted:", { aadharNumber, fullName, documentType });
 
     // 5. Validation Logic
-    // Success if 12-digit number found OR if a Name is found (User fallback requirement)
     const hasValidAadhar = aadharNumber && /^\d{12}$/.test(aadharNumber);
     const hasName = !!fullName;
 
     if (hasValidAadhar || hasName) {
       let successMessage = "ID Verified successfully.";
       if (!hasValidAadhar && hasName) {
-        successMessage = `Verified via Name: ${fullName}`;
+        successMessage = `Verified via Name: ${fullName} (Number Not Found)`;
       } else if (hasValidAadhar) {
         successMessage = `Verified Aadhar: ${aadharNumber.substring(0,4)} XXXX XXXX`;
       }
@@ -57,7 +57,12 @@ export async function verifyAadharWithADI(imageDataUri: string) {
       };
     }
 
-    return { verified: false, message: "Could not extract Aadhar Number or Name. Please try again." };
+    // Specific feedback based on what Azure detected
+    if (documentType && !documentType.includes("idDocument")) {
+      return { verified: false, message: `Detected a different document type (${documentType}). Please ensure it's a clear Aadhar card.` };
+    }
+
+    return { verified: false, message: "Could not extract a valid 12-digit Aadhar number or Name. Please ensure better lighting and avoid glare." };
 
   } catch (error) {
     console.error("Azure Document Intelligence Error:", error);

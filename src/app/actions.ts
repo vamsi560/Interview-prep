@@ -1,22 +1,60 @@
 "use server";
 
-import {
-  aiInterviewerAsksQuestions,
-  type AIInterviewerAsksQuestionsInput,
-} from "@/ai/flows/ai-interviewer-asks-questions";
 import { verifyAadharWithADI } from "@/lib/azure-id-verify";
-import { 
-  analyzeUserResponse, 
-  type AnalyzeUserResponseInput 
-} from "@/ai/flows/ai-analyzes-user-responses";
 import { analyzeFrameWithAzure } from "@/lib/azure-vision-proctor";
+import { z } from "zod";
+import { MockSessions } from "@/lib/mock-db";
 import { 
   generateSummaryReport,
   type GenerateSummaryReportInput,
 } from "@/ai/flows/generate-summary-report";
+import { interviewTurn } from "@/ai/flows/interview-turn";
 
-import { z } from "zod";
-import { MockSessions } from "@/lib/mock-db";
+export const FALLBACK_QUESTIONS = [
+  "Could you please introduce yourself and tell me about your background?",
+  "Tell me about your most recent project experience. What were the key challenges you faced?",
+  "What specific technologies and tools are you most comfortable with and why?",
+  "What do you consider to be your biggest strengths and weaknesses as a professional?",
+  "Where do you see yourself in the next 5 years, and how does this role fit into those plans?"
+];
+
+export async function processInterviewTurn(input: {
+  role: string,
+  difficulty: "easy" | "medium" | "hard",
+  questionBank?: string,
+  transcript: { role: 'user' | 'ai', content: string }[],
+  userResponse: string
+}) {
+  try {
+    const result = await withRetry(() => interviewTurn({
+      role: input.role,
+      difficulty: input.difficulty,
+      questionBank: input.questionBank,
+      transcript: input.transcript,
+      userResponse: input.userResponse
+    }));
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error in processInterviewTurn AI call:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getInitialQuestion(input: { role: string, difficulty: string, questionBank?: string }) {
+  try {
+    const result = await withRetry(() => interviewTurn({
+      role: input.role,
+      difficulty: input.difficulty as any,
+      questionBank: input.questionBank,
+      transcript: [],
+      userResponse: "The candidate has just entered the room. Please start the interview with an introduction."
+    }));
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error in getInitialQuestion:", error);
+    return { success: false, error: String(error) };
+  }
+}
 
 const MAX_RETRIES = 2;
 const INITIAL_DELAY = 1000;
@@ -37,51 +75,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delay =
 // import { addInterviewSession, getInterviewSession, getInterviewSessions, updateInterviewSession } from "@/lib/firestore";
 import type { InterviewSession } from "@/lib/types";
 
-const getAIQuestionInputSchema = z.object({
-  role: z.string(),
-  difficultyLevel: z.enum(["easy", "medium", "hard"]),
-  questionBank: z.string().optional(),
-  previousQuestions: z.array(z.string()).optional(),
-});
-
-export async function getAIQuestion(input: AIInterviewerAsksQuestionsInput) {
-  try {
-    // Add timeout to prevent long-running AI requests
-    const aiTimeout = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('AI question generation timed out')), 30000) // 30 seconds
-    );
-
-    const generateQuestionPromise = async () => {
-      const parsedInput = getAIQuestionInputSchema.parse(input);
-      return await withRetry(() => aiInterviewerAsksQuestions(parsedInput));
-    };
-
-    const result = await Promise.race([generateQuestionPromise(), aiTimeout]);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error in getAIQuestion:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    return { success: false, error: errorMessage };
-  }
-}
-
-const getAIFeedbackInputSchema = z.object({
-  userResponse: z.string(),
-  interviewQuestion: z.string(),
-  interviewContext: z.string().optional(),
-});
-
-export async function getAIFeedback(input: AnalyzeUserResponseInput) {
-  try {
-    const parsedInput = getAIFeedbackInputSchema.parse(input);
-    const result = await withRetry(() => analyzeUserResponse(parsedInput));
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error in getAIFeedback:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-    return { success: false, error: errorMessage };
-  }
-}
+// Deprecated actions removed
 
 export async function createInterviewSession(session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport' | 'violations'>) {
     const localId = `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
