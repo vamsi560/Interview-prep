@@ -1,21 +1,21 @@
 export const MockCandidates = [
   {
     id: "cand-se-001",
-    role: "Software Engineer",
+    role: "Generative AI Engineer",
     difficulty: "medium",
-    topics: ["React", "System Design", "Next.js"],
+    topics: ["LLMs", "RAG", "Vector Databases", "Prompt Engineering"],
   },
   {
     id: "cand-de-002",
-    role: "Data Engineer",
+    role: "React Engineer",
     difficulty: "hard",
-    topics: ["Python", "SQL", "Spark"],
+    topics: ["React 18", "Next.js", "Zustand", "Performance"],
   },
   {
     id: "cand-ge-003",
-    role: "Gen AI Engineer",
-    difficulty: "easy",
-    topics: ["LLMs", "Prompt Engineering"],
+    role: "Java Engineer",
+    difficulty: "medium",
+    topics: ["Spring Boot", "JVM Internals", "Microservices", "Kafka"],
   }
 ];
 

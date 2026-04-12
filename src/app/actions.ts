@@ -3,7 +3,7 @@
 import { verifyAadharWithADI } from "@/lib/azure-id-verify";
 import { analyzeFrameWithAzure } from "@/lib/azure-vision-proctor";
 import { z } from "zod";
-import { MockSessions } from "@/lib/mock-db";
+import { db } from "@/lib/db";
 import { 
   generateSummaryReport,
   type GenerateSummaryReportInput,
@@ -73,33 +73,87 @@ import type { InterviewSession } from "@/lib/types";
 export async function createInterviewSession(session: Omit<InterviewSession, 'id' | 'date' | 'feedback' | 'transcript' | 'summaryReport' | 'violations'>) {
     const localId = `interview_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log('Creating interview session with ID:', localId);
-    MockSessions.push({
-      ...session,
-      id: localId,
-      date: new Date().toISOString(),
-      feedback: [],
-      transcript: [],
-      violations: [],
-    });
-    return { success: true, id: localId };
+    
+    try {
+        await db.query(
+            `INSERT INTO sessions (id, candidate_id, role, duration) 
+             VALUES ($1, $2, $3, $4)`,
+            [localId, session.id || null, session.role, session.duration || '0']
+        );
+        return { success: true, id: localId };
+    } catch (error) {
+        console.error("DB Error creating session:", error);
+        return { success: false, error: String(error) };
+    }
 }
 
 export async function saveInterviewSession(id: string, session: Omit<InterviewSession, 'id' | 'date' | 'role' | 'summaryReport'>) {
     console.log('Saving interview session:', id);
-    const index = MockSessions.findIndex(s => s.id === id);
-    if(index > -1) {
-       MockSessions[index] = { ...MockSessions[index], ...session };
-       return { success: true, id };
+    try {
+        await db.query(
+            `UPDATE sessions SET 
+             score = $1, 
+             duration = $2, 
+             feedback = $3, 
+             transcript = $4, 
+             violations = $5
+             WHERE id = $6`,
+            [
+                session.score || 0, 
+                session.duration, 
+                JSON.stringify(session.feedback || []), 
+                JSON.stringify(session.transcript || []), 
+                JSON.stringify(session.violations || []), 
+                id
+            ]
+        );
+        return { success: true, id };
+    } catch (error) {
+        console.error("DB Error saving session:", error);
+        return { success: false, error: String(error) };
     }
-    return { success: false, error: "Not found" };
 }
 
 export async function fetchInterviewSessions() {
-    return MockSessions;
+    const res = await db.query("SELECT * FROM sessions ORDER BY date DESC");
+    return res.rows;
 }
 
 export async function fetchInterviewSession(id: string) {
-    return MockSessions.find(s => s.id === id) || null;
+    const res = await db.query("SELECT * FROM sessions WHERE id = $1", [id]);
+    return res.rows[0] || null;
+}
+
+export async function getCandidate(id: string) {
+    const res = await db.query("SELECT * FROM candidates WHERE id = $1", [id]);
+    return res.rows[0] || null;
+}
+
+export async function registerCandidateAction(data: { name: string, email: string, role: string, difficulty: string }) {
+    const randomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const uniqueId = `AURA-${randomId}`;
+    
+    try {
+        await db.query(
+            `INSERT INTO candidates (id, name, email, role, difficulty) 
+             VALUES ($1, $2, $3, $4, $5)`,
+            [uniqueId, data.name, data.email, data.role, data.difficulty]
+        );
+        
+        // Construct the mock interview link
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://aura-interview.vercel.app";
+        const interviewLink = `${baseUrl}/login?id=${uniqueId}`;
+        
+        return { 
+            success: true, 
+            id: uniqueId, 
+            link: interviewLink,
+            name: data.name
+        };
+    } catch (error) {
+        console.error("Error registering candidate:", error);
+        return { success: false, error: String(error) };
+    }
 }
 
 
@@ -122,20 +176,21 @@ import { analyzeFullInterview } from "@/ai/flows/full-interview-analysis";
 
 export async function generateAndSaveSummaryReport(interviewId: string) {
   try {
-    const session = MockSessions.find(s => s.id === interviewId);
+    const sessionRes = await db.query("SELECT * FROM sessions WHERE id = $1", [interviewId]);
+    const session = sessionRes.rows[0];
     if (!session) {
       throw new Error("Interview session not found.");
     }
 
     const report = await analyzeFullInterview({
       role: session.role,
-      transcript: session.transcript.map(m => ({ role: m.role as 'user' | 'ai', content: m.content })),
+      transcript: (session.transcript || []).map((m: any) => ({ role: m.role as 'user' | 'ai', content: m.content })),
     });
 
-    const index = MockSessions.findIndex(s => s.id === interviewId);
-    if (index > -1) {
-        MockSessions[index].summaryReport = report as any;
-    }
+    await db.query(
+        "UPDATE sessions SET summary_report = $1 WHERE id = $2",
+        [JSON.stringify(report), interviewId]
+    );
 
     // Export to Azure Storage as Markdown
     await uploadReportToAzure(interviewId, report, session);

@@ -51,13 +51,14 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-2">
-      <div className="hidden lg:flex flex-col items-start justify-center space-y-8 bg-gradient-to-br from-primary/30 to-secondary p-12 text-foreground">
+      <div className="hidden lg:flex flex-col items-start justify-center space-y-8 bg-gradient-to-br from-[#056BFC]/20 to-[#3FD534]/30 p-12 text-foreground">
         <div className="flex items-center gap-3">
-          <Image src={organizationLogo} alt="Organization Logo" className="h-10 w-auto object-contain" />
-          <h1 className="text-3xl font-bold">ProPrep AI - Recruitment Link</h1>
+          <div className="h-10 w-10 bg-[#056BFC] rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg ring-4 ring-white">A</div>
+          <h1 className="text-3xl font-bold tracking-tight text-[#303030]">Aura <span className="text-[#056BFC]/60">| Interview</span></h1>
         </div>
-        <h2 className="text-4xl font-bold tracking-tight">
-          Welcome to your Interview Session
+        <h2 className="text-5xl font-black tracking-tighter text-[#303030] leading-none">
+          The Future of <br/>
+          <span className="text-[#056BFC]">AI Interviews</span>
         </h2>
         <ul className="space-y-4 text-lg text-muted-foreground">
           <li className="flex items-start gap-3">
@@ -86,9 +87,9 @@ export default function LoginPage() {
             <div className="mb-4 flex justify-center lg:hidden bg-slate-800 p-2 rounded-md">
                 <Image src={organizationLogo} alt="Organization Logo" className="h-10 w-auto object-contain" />
             </div>
-            <CardTitle className="text-2xl">Start Interview</CardTitle>
+            <CardTitle className="text-2xl font-bold text-[#303030]">Candidate Login</CardTitle>
             <CardDescription>
-              Please enter your unique Interview ID.
+              Securely enter your unique Aura Interview ID.
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleLogin}>
@@ -98,20 +99,22 @@ export default function LoginPage() {
                 <Input
                   id="uniqueId"
                   placeholder="e.g. cand-se-001"
+                  className="focus:ring-[#056BFC]"
                   value={uniqueId}
                   onChange={(e) => setUniqueId(e.target.value)}
                   required
                   disabled={isLoading}
                 />
               </div>
-              <div className="text-xs text-muted-foreground">
-                  <p>Hint: Try using "cand-se-001" to bypass.</p>
+              <div className="text-xs text-muted-foreground bg-slate-50 p-3 rounded-lg border border-dashed">
+                  <p className="font-medium">Protocol Hint:</p>
+                  <p>Use "cand-se-001" for the Generative AI track.</p>
               </div>
             </CardContent>
             <CardFooter>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full bg-[#056BFC] hover:bg-[#024099] shadow-lg h-12 text-lg font-bold" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isLoading ? "Verifying..." : "Enter Session"}
+                {isLoading ? "Validating..." : "Enter Session"}
               </Button>
             </CardFooter>
           </form>
