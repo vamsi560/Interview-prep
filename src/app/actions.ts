@@ -118,41 +118,105 @@ export async function checkProctoring(input: { videoFrameDataUri: string }) {
   }
 }
 
+import { analyzeFullInterview } from "@/ai/flows/full-interview-analysis";
+
 export async function generateAndSaveSummaryReport(interviewId: string) {
   try {
-    // Quick bypass for Firebase issues
-    console.log('Generating summary report for:', interviewId, '- bypassing due to Firebase issues');
-    const mockReport = {
-      overallScore: 75,
-      strengths: "Good communication skills and clear explanations.",
-      areasForImprovement: "Could provide more specific examples and technical details.",
-      finalVerdict: "Shows potential but needs more preparation for technical questions."
-    };
-    return { success: true, data: mockReport };
-    
-    
-    // Original Firebase-dependent code commented out:
-    /*
-    const session = await getInterviewSession(interviewId);
+    const session = MockSessions.find(s => s.id === interviewId);
     if (!session) {
       throw new Error("Interview session not found.");
     }
 
-    const reportInput: GenerateSummaryReportInput = {
-      transcript: session.transcript.map(m => ({ role: m.role, content: m.content })),
-      feedback: session.feedback,
+    const report = await analyzeFullInterview({
       role: session.role,
-    };
+      transcript: session.transcript.map(m => ({ role: m.role as 'user' | 'ai', content: m.content })),
+    });
 
-    const report = await generateSummaryReport(reportInput);
-    await updateInterviewSession(interviewId, { summaryReport: report });
+    const index = MockSessions.findIndex(s => s.id === interviewId);
+    if (index > -1) {
+        MockSessions[index].summaryReport = report as any;
+    }
+
+    // Export to Azure Storage as Markdown
+    await uploadReportToAzure(interviewId, report, session);
+
     return { success: true, data: report };
-    */
   } catch (error) {
     console.error("Error generating or saving summary report:", error);
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
     return { success: false, error: errorMessage };
   }
+}
+
+async function uploadReportToAzure(interviewId: string, report: any, session: any) {
+    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+    const sasUrl = process.env.AZURE_STORAGE_SAS_URL;
+
+    if (!connectionString && !sasUrl) {
+        console.log(`[Mock Azure Report Upload] Saving report for ${interviewId} to local mock storage.`);
+        return;
+    }
+
+    try {
+        const { BlobServiceClient, ContainerClient } = await import("@azure/storage-blob");
+        let containerClient;
+
+        if (sasUrl) {
+            containerClient = new ContainerClient(sasUrl);
+        } else {
+            const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString!);
+            containerClient = blobServiceClient.getContainerClient("interview-reports");
+            await containerClient.createIfNotExists();
+        }
+
+        const reportContent = formatReportToMarkdown(interviewId, report, session);
+        const blockBlobClient = containerClient.getBlockBlobClient(`report_${interviewId}.md`);
+        
+        await blockBlobClient.upload(reportContent, reportContent.length, {
+            blobHTTPHeaders: { blobContentType: "text/markdown" }
+        });
+
+        console.log(`Successfully uploaded report for ${interviewId} to Azure Storage.`);
+    } catch (error) {
+        console.error("Failed to upload report to Azure:", error);
+    }
+}
+
+function formatReportToMarkdown(id: string, report: any, session: any): string {
+    let md = `# Interview Report: ${session.role}\n`;
+    md += `**Interview ID:** ${id}\n`;
+    md += `**Date:** ${new Date(session.date).toLocaleString()}\n`;
+    md += `**Overall Score:** ${report.overallScore}/100\n`;
+    md += `**Duration:** ${session.duration} minutes\n`;
+    md += `**Recommendation:** ${report.hiringRecommendation}\n\n`;
+
+    md += `## Executive Summary\n${report.summary}\n\n`;
+
+    md += `## Strengths\n`;
+    report.strengths.forEach((s: string) => md += `- ${s}\n`);
+    md += `\n`;
+
+    md += `## Areas for Improvement\n`;
+    report.weaknesses.forEach((w: string) => md += `- ${w}\n`);
+    md += `\n`;
+
+    md += `## Detailed Feedback\n`;
+    md += `### Technical Assessment\n${report.technicalFeedback}\n\n`;
+    md += `### Behavioral Assessment\n${report.behavioralFeedback}\n\n`;
+
+    md += `## Question-by-Question Evaluation\n`;
+    report.questionFeedback.forEach((q: any, i: number) => {
+        md += `### Q${i + 1}: ${q.question}\n`;
+        md += `**Score:** ${q.score}/100\n`;
+        md += `**Feedback:** ${q.feedback}\n\n`;
+    });
+
+    md += `## Full Transcript\n`;
+    session.transcript.forEach((m: any) => {
+        md += `**${m.role.toUpperCase()}:** ${m.content}\n\n`;
+    });
+
+    return md;
 }
 
 export async function validateAadharAction(input: { imageUri: string }) {

@@ -244,8 +244,8 @@ function VerifyAadharContent() {
                       {isScanning && (
                          <div className="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10">
                             <div className="flex justify-between items-center mb-2">
-                               <span className="text-xs text-white/80 font-medium tracking-tight">AI Analysis Progress</span>
-                               <span className="text-xs text-primary font-bold">{Math.round((scanAttempts/MAX_SCAN_ATTEMPTS)*100)}%</span>
+                               <span className="text-xs text-white/80 font-medium tracking-tight">Verification Attempts</span>
+                               <span className="text-xs text-primary font-bold">{scanAttempts} / {MAX_SCAN_ATTEMPTS}</span>
                             </div>
                             <Progress value={(scanAttempts/MAX_SCAN_ATTEMPTS)*100} className="h-1.5" />
                          </div>

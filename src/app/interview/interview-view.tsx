@@ -3,28 +3,17 @@
 
 import { useSearchParams } from "next/navigation";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { getInitialQuestion, saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk, processInterviewTurn } from "@/app/actions";
-import { FALLBACK_QUESTIONS } from "@/lib/interview-constants";
+import { saveInterviewSession, checkProctoring, generateAndSaveSummaryReport, uploadRecordingChunk } from "@/app/actions";
+import { PREDEFINED_QUESTIONS } from "@/lib/interview-constants";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Mic, MicOff, Volume2, VolumeX, Loader2, Send } from "lucide-react";
-import type { InterviewSettings, Message, Feedback } from "@/lib/types";
+import { MicOff, Volume2, VolumeX, Loader2, ChevronRight } from "lucide-react";
+import type { InterviewSettings, Message } from "@/lib/types";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
-import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAzureSpeech } from "@/hooks/use-azure-speech";
-import { UserResponseIndicator } from "@/components/user-response-indicator";
 import { useRouter } from "next/navigation";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Skeleton } from "@/components/ui/skeleton";
 
 export function InterviewView() {
   const router = useRouter();
@@ -32,13 +21,11 @@ export function InterviewView() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<InterviewSettings | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [allFeedback, setAllFeedback] = useState<Feedback[]>([]);
-  const [currentFeedback, setCurrentFeedback] = useState<Feedback | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isThinking, setIsThinking] = useState(false);
-  const [userText, setUserText] = useState("");
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [hasCameraPermission, setHasCameraPermission] = useState(true);
   const [interviewId, setInterviewId] = useState<string | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const interviewStartTime = useRef<Date | null>(null);
@@ -47,11 +34,9 @@ export function InterviewView() {
   const chunkIndexRef = useRef<number>(0);
   const violationsRef = useRef<{ timestamp: string; message: string }[]>([]);
   const isMountedRef = useRef(true);
-  const [codeSnippet, setCodeSnippet] = useState("");
-  const [activeFallbackIndex, setActiveFallbackIndex] = useState(-1);
-  const [isFallbackMode, setIsFallbackMode] = useState(false);
+  const [showNextButton, setShowNextButton] = useState(false);
 
-  const handleInterviewCompletion = useCallback(async () => {
+  const handleInterviewCompletion = useCallback(async (finalTranscript: Message[]) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
@@ -60,39 +45,22 @@ export function InterviewView() {
     const endTime = new Date();
     const durationInMinutes = Math.round((endTime.getTime() - interviewStartTime.current.getTime()) / 60000);
   
-    const finalScore = allFeedback.length > 0 ? Math.round(allFeedback.reduce((sum, f) => sum + f.score, 0) / allFeedback.length) : 0;
-  
     const sessionData = {
-      score: finalScore,
+      score: 0, 
       duration: durationInMinutes.toString(),
-      feedback: allFeedback,
-      transcript: messages,
+      feedback: [], 
+      transcript: finalTranscript,
       violations: violationsRef.current,
     };
   
     const result = await saveInterviewSession(interviewId, sessionData);
   
     if (result.success) {
-      toast({
-        title: "Interview Complete!",
-        description: "Your session has been saved. Generating summary report...",
-      });
-      // Generate summary report in the background
-      generateAndSaveSummaryReport(interviewId).then(reportResult => {
-        if(reportResult.success) {
-            toast({
-                title: "Report Ready",
-                description: "Your post-interview summary report is ready.",
-              });
-        } else {
-            toast({
-                title: "Report Failed",
-                description: "Could not generate your summary report.",
-                variant: "destructive",
-            });
-        }
-      });
-      router.push("/dashboard");
+      // Logic for background report generation and storage upload
+      generateAndSaveSummaryReport(interviewId);
+      
+      // Transition to final state immediately
+      setIsCompleted(true);
     } else {
       toast({
         title: "Error",
@@ -100,93 +68,28 @@ export function InterviewView() {
         variant: "destructive",
       });
     }
-  }, [interviewId, allFeedback, messages, router, toast]);
+  }, [interviewId, toast]);
 
-  const processUserResponse = useCallback(async (responseText: string, speakCallback: (text: string) => void) => {
-    if (!responseText.trim() || !settings) return;
+  const processUserResponse = useCallback((responseText: string) => {
+    if (!responseText.trim()) return;
 
-    setIsThinking(true);
-    setCurrentFeedback(null);
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: responseText };
-    setMessages(prev => [...prev, userMessage]);
-
-    // Consolidate current transcript for AI context
-    const currentTranscript = messages.map(m => ({ role: m.role as 'user' | 'ai', content: m.content }));
-
-    try {
-        const result = await processInterviewTurn({
-            role: settings.role,
-            difficulty: settings.difficulty,
-            questionBank: settings.questionBank,
-            transcript: currentTranscript,
-            userResponse: responseText
-        });
-
-        if (result.success && result.data) {
-            const data = result.data;
-            setCurrentFeedback({
-                feedback: data.feedback,
-                suggestions: data.suggestions,
-                score: data.score
-            });
-            setAllFeedback(prev => [...prev, {
-                feedback: data.feedback,
-                suggestions: data.suggestions,
-                score: data.score
-            }]);
-
-            const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: data.nextQuestion };
-            setMessages(prev => [...prev, aiMessage]);
-            speakCallback(aiMessage.content);
-
-            if (data.isComplete || data.nextQuestion.toLowerCase().includes("complete")) {
-                handleInterviewCompletion();
-            }
-            
-            setIsFallbackMode(false); // Clear fallback if AI recovers
-        } else {
-            throw new Error(result.error || "AI turn failed");
-        }
-    } catch (error) {
-        console.error("Switching to fallback mode:", error);
-        setIsFallbackMode(true);
-        
-        // Fallback Logic: Take the next question from the hardcoded list
-        const nextIndex = activeFallbackIndex + 1;
-        if (nextIndex < FALLBACK_QUESTIONS.length) {
-            const fallbackQuestion = FALLBACK_QUESTIONS[nextIndex];
-            setActiveFallbackIndex(nextIndex);
-            
-            const aiMessage: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: fallbackQuestion };
-            setMessages(prev => [...prev, aiMessage]);
-            speakCallback(aiMessage.content);
-            
-            toast({
-                title: "Network Congestion",
-                description: "AI is slow. Continuing with standard interview questions.",
-            });
-        } else {
-            // End interview if fallbacks are also exhausted
-            const endMessage: Message = { id: Date.now().toString(), role: 'ai', content: "Thank you. The interview is now complete." };
-            setMessages(prev => [...prev, endMessage]);
-            speakCallback(endMessage.content);
-            handleInterviewCompletion();
-        }
-    } finally {
-        setIsThinking(false);
-    }
-  }, [messages, settings, toast, handleInterviewCompletion, activeFallbackIndex]);
+    setMessages(prev => {
+        const newMessages = [...prev, userMessage];
+        setShowNextButton(true);
+        return newMessages;
+    });
+  }, []);
 
   const { 
     isListening, 
     isSpeaking, 
     isVoiceEnabled, 
-    currentTranscript, 
     toggleVoice, 
     speak, 
     startContinuous 
   } = useAzureSpeech(
-    (text) => processUserResponse(text, speak), 
+    (text) => processUserResponse(text), 
     toast
   );
 
@@ -250,7 +153,7 @@ export function InterviewView() {
                     uploadRecordingChunk(formData).catch(err => console.error("Upload chunk error:", err));
                 }
             };
-            mediaRecorder.start(10000); // 10 sec chunks
+            mediaRecorder.start(10000); 
         }
 
         proctoringIntervalRef.current = setInterval(runProctoring, 5000);
@@ -282,60 +185,23 @@ export function InterviewView() {
   useEffect(() => {
     const role = searchParams.get("role");
     const difficulty = searchParams.get("difficulty") as InterviewSettings['difficulty'] | null;
-    const topics = searchParams.get("topics") || "";
-    const questionBank = searchParams.get("questionBank") || "";
     const id = searchParams.get("interviewId");
 
     if (role && difficulty && id) {
       setInterviewId(id);
-      const newSettings = { role, difficulty, topics, questionBank };
-      setSettings(newSettings);
+      setSettings({ role, difficulty, topics: searchParams.get("topics") || "", questionBank: searchParams.get("questionBank") || "" });
       interviewStartTime.current = new Date();
       
-      const fetchFirstQuestion = async () => {
-        setIsLoading(true);
-        
-        try {
-          const questionPromise = getInitialQuestion({ 
-            role: newSettings.role, 
-            difficulty: newSettings.difficulty, 
-            questionBank: newSettings.questionBank
-          });
-
-          const res = await questionPromise;
-          
-          if(res.success && res.data){
-            const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: res.data.nextQuestion };
-            setMessages([firstMessage]);
-            speak(firstMessage.content);
-            setActiveFallbackIndex(0); // Mark that we've used the first "logical" slot
-            // Start listening after AI speaks the first question
-          } else {
-            throw new Error(res.error || "Failed to generate first question.");
-          }
-        } catch (error) {
-          console.error('Error fetching first question:', error);
-          
-          const fallbackQuestion = FALLBACK_QUESTIONS[0];
-          setActiveFallbackIndex(0);
-          setIsFallbackMode(true);
-          
-          const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: fallbackQuestion };
-          setMessages([firstMessage]);
-          speak(fallbackQuestion);
-          
-          toast({ 
-            title: "Using Fallback Track", 
-            description: "AI is busy. Started with a standard interview question.",
-            variant: "default"
-          });
-        } finally {
+      setIsLoading(true);
+      const firstQuestion = PREDEFINED_QUESTIONS[0];
+      const firstMessage: Message = { id: Date.now().toString(), role: "ai", content: firstQuestion };
+      setMessages([firstMessage]);
+      
+      setTimeout(() => {
           setIsLoading(false);
-          // Small delay before starting continuous listening
-          setTimeout(startContinuous, 4000); 
-        }
-      };
-      fetchFirstQuestion();
+          speak(firstQuestion);
+          setTimeout(startContinuous, 3000);
+      }, 1000);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, toast]);
@@ -350,7 +216,21 @@ export function InterviewView() {
   }, [messages]);
 
   const aiAvatar = PlaceHolderImages.find(img => img.id === 'ai-avatar');
-  const userAvatar = PlaceHolderImages.find(img => img.id === 'user-avatar');
+
+  const handleNextQuestion = () => {
+    const nextIndex = currentQuestionIndex + 1;
+    
+    if (nextIndex < PREDEFINED_QUESTIONS.length) {
+        const nextQuestion = PREDEFINED_QUESTIONS[nextIndex];
+        const aiMessage: Message = { id: Date.now().toString(), role: 'ai', content: nextQuestion };
+        setMessages(prev => [...prev, aiMessage]);
+        setCurrentQuestionIndex(nextIndex);
+        setShowNextButton(false);
+        speak(nextQuestion);
+    } else {
+        handleInterviewCompletion(messages);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -358,157 +238,134 @@ export function InterviewView() {
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <div className="text-center">
           <p className="text-lg font-medium">Preparing your interview...</p>
-          <p className="text-sm text-muted-foreground">This may take up to 45 seconds</p>
+          <p className="text-sm text-muted-foreground">Initializing protocols</p>
         </div>
       </div>
     );
   }
 
   const isLastMessageFromAI = messages.length > 0 && messages[messages.length - 1].role === 'ai';
-  const isInterviewComplete = messages.findLast(m => m.content.includes("The interview is now complete")) !== undefined;
 
+  if (isCompleted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto w-full text-center space-y-8 animate-in fade-in zoom-in duration-500">
+        <div className="bg-white p-12 rounded-[3rem] shadow-2xl border flex flex-col items-center space-y-6">
+           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+              </svg>
+           </div>
+           <h1 className="text-4xl font-black text-slate-900 tracking-tight">Interview Completed</h1>
+           <p className="text-lg text-slate-500 max-w-md leading-relaxed">
+             Thank you for your time. Your responses have been securely recorded and submitted for evaluation.
+           </p>
+           <div className="pt-8 w-full">
+              <Button 
+                size="lg" 
+                onClick={() => window.close()} 
+                className="w-full h-16 text-xl font-bold rounded-2xl shadow-xl bg-slate-900 hover:bg-slate-800 transition-all active:scale-95"
+              >
+                Close Interview
+              </Button>
+              <p className="mt-4 text-xs text-slate-400 font-medium">You can now safely close this tab or window.</p>
+           </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid md:grid-cols-3 gap-6 h-full">
-      <div className="md:col-span-2 flex flex-col h-full bg-card p-4 rounded-lg shadow-sm">
-        <div className="flex justify-between items-start mb-4">
+    <div className="flex flex-col items-center h-full max-w-4xl mx-auto w-full">
+      <div className="w-full flex-grow flex flex-col bg-card/40 backdrop-blur-md p-6 rounded-3xl border shadow-xl overflow-hidden relative">
+        <div className="flex justify-between items-center mb-6 pb-4 border-b">
             <div>
-                <h1 className="text-2xl font-bold mb-1">{settings?.role} Interview</h1>
-                <p className="text-muted-foreground">Difficulty: {settings?.difficulty}</p>
+                <h1 className="text-xl font-bold text-slate-900">{settings?.role}</h1>
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">Interviewer Protocol Active</p>
             </div>
-            <div className="w-1/4">
-                 <video ref={videoRef} className="w-full aspect-video rounded-md" autoPlay muted />
-                 { !(hasCameraPermission) && (
-                    <Alert variant="destructive" className="mt-2">
-                              <AlertTitle>Camera Access Required</AlertTitle>
-                              <AlertDescription>
-                                Please allow camera access to use this feature.
-                              </AlertDescription>
-                      </Alert>
-                )
-                }
+            <div className="flex items-center gap-4">
+                 <div className="text-right">
+                    <p className="text-[10px] uppercase font-bold text-muted-foreground">Progress</p>
+                    <p className="text-sm font-mono font-bold">{currentQuestionIndex + 1} / {PREDEFINED_QUESTIONS.length}</p>
+                 </div>
+                 <div className="relative group">
+                    <video ref={videoRef} className="h-12 w-16 rounded-lg object-cover ring-2 ring-slate-100 transition-all group-hover:w-32 group-hover:h-24 shadow-lg" autoPlay muted />
+                    { !(hasCameraPermission) && (
+                        <div className="absolute inset-0 bg-red-100 flex items-center justify-center rounded-lg">
+                           <VolumeX className="h-4 w-4 text-red-500" />
+                        </div>
+                    )}
+                 </div>
             </div>
         </div>
-        <ScrollArea className="flex-grow mb-4 pr-4" ref={scrollAreaRef}>
-          <div className="space-y-6">
+
+        <ScrollArea className="flex-grow mb-6 pr-4" ref={scrollAreaRef}>
+          <div className="space-y-6 pb-4">
             {messages.map((message) => (
               <div key={message.id} className={`flex items-start gap-4 ${message.role === 'user' ? 'justify-end' : ''}`}>
                 {message.role === 'ai' && (
-                  <Avatar className={isSpeaking && isLastMessageFromAI && message.id === messages[messages.length-1].id ? "ring-4 ring-primary animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.5)]" : ""}>
-                    <AvatarImage src={aiAvatar?.imageUrl} data-ai-hint={aiAvatar?.imageHint} />
+                  <Avatar className={`h-8 w-8 ring-1 ring-slate-200 ${isSpeaking && isLastMessageFromAI && message.id === messages[messages.length-1].id ? "ring-2 ring-primary scale-105" : ""}`}>
+                    <AvatarImage src={aiAvatar?.imageUrl} />
                     <AvatarFallback>AI</AvatarFallback>
                   </Avatar>
                 )}
-                <div className={`max-w-prose rounded-lg p-3 ${message.role === 'ai' ? 'bg-muted' : 'bg-primary text-primary-foreground'}`}>
-                  <p>{message.content}</p>
+                <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                    message.role === 'ai' ? 'bg-white text-slate-800' : 'bg-slate-900 text-white'
+                }`}>
+                  <p className="leading-relaxed">{message.content}</p>
                 </div>
-                 {message.role === 'user' && (
-                  <Avatar>
-                    <AvatarImage src={userAvatar?.imageUrl} data-ai-hint={userAvatar?.imageHint} />
-                    <AvatarFallback>U</AvatarFallback>
-                  </Avatar>
-                )}
               </div>
             ))}
-            {isThinking && (
-                 <div className="flex items-start gap-4">
-                    <Avatar>
-                        <AvatarImage src={aiAvatar?.imageUrl} data-ai-hint={aiAvatar?.imageHint}/>
-                        <AvatarFallback>AI</AvatarFallback>
-                    </Avatar>
-                    <div className="max-w-prose rounded-lg p-3 bg-muted">
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                    </div>
-                </div>
-            )}
-            {isLastMessageFromAI && !isThinking && !isSpeaking && !isInterviewComplete && (
-              <div className="flex justify-center">
-                  <UserResponseIndicator />
-              </div>
-            )}
           </div>
         </ScrollArea>
-        {!isInterviewComplete && (
-            <div className="flex flex-col gap-4 mt-6">
-                <div className={`p-4 rounded-xl border-2 transition-all duration-500 ${isListening ? "border-primary bg-primary/5 animate-pulse" : "border-muted bg-muted/20"}`}>
-                   <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`size-3 rounded-full ${isListening ? "bg-red-500 animate-ping" : "bg-muted-foreground"}`} />
-                        <span className="text-sm font-semibold tracking-wider uppercase opacity-70">
-                          {isListening ? "Live Transcribing" : "Microphone Paused"}
-                        </span>
-                      </div>
-                      {currentTranscript.length > 5 && !isThinking && (
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          onClick={() => processUserResponse(currentTranscript, speak)}
-                          className="h-8 text-xs font-bold"
-                        >
-                          Submit Now
-                        </Button>
-                      )}
-                   </div>
-                   <p className="text-xl font-medium min-h-[3rem] text-foreground/80 italic">
-                      {currentTranscript || "Waiting for your response..."}
-                   </p>
-                </div>
 
-                <div className="flex items-center justify-between">
-                    <Button onClick={toggleVoice} variant="ghost" size="icon" disabled={isSpeaking}>
-                        {isVoiceEnabled ? <Volume2 className="h-5 w-5"/> : <VolumeX className="h-5 w-5"/>}
-                    </Button>
-                    <div className="flex gap-2">
-                        <div className="bg-primary/10 text-primary px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest">
-                            Voice Only Mode Active
+        <div className="mt-auto pt-6 border-t flex flex-col gap-4">
+            {showNextButton && !isSpeaking ? (
+                <Button 
+                    size="lg" 
+                    onClick={handleNextQuestion}
+                    className="w-full h-14 text-lg font-bold rounded-2xl shadow-lg hover:translate-y-[-2px] transition-all bg-primary hover:bg-primary/90"
+                >
+                    {currentQuestionIndex + 1 >= PREDEFINED_QUESTIONS.length ? "Finish Interview" : "Proceed to Next Question"}
+                    <ChevronRight className="ml-2 h-5 w-5" />
+                </Button>
+            ) : (
+                <div className="flex flex-col items-center">
+                    <div className={`w-full py-6 px-8 rounded-3xl border-2 border-dashed transition-all duration-700 flex flex-col items-center gap-2
+                        ${isListening ? "border-primary/40 bg-primary/[0.02] shadow-inner" : "border-slate-100 bg-slate-50/30"}
+                    `}>
+                        <div className="flex items-center gap-3">
+                            {isListening ? (
+                                <div className="flex gap-1">
+                                    {[1,2,3,4].map(i => (
+                                        <div key={i} className="w-1 bg-primary rounded-full animate-pulse" style={{ height: `${Math.random()*20 + 5}px`, animationDelay: `${i*150}ms` }} />
+                                    ))}
+                                </div>
+                            ) : <MicOff className="h-4 w-4 text-slate-300" />}
+                            <span className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isListening ? "text-primary" : "text-slate-400"}`}>
+                                {isListening ? "Live Audio Stream" : "Awaiting Input"}
+                            </span>
                         </div>
+                        <div className="h-4" />
                     </div>
                 </div>
+            )}
+
+            <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full">
+                        <div className={`w-1.5 h-1.5 rounded-full ${isListening ? "bg-green-500 animate-pulse" : "bg-slate-300"}`} />
+                        <span className="text-[9px] font-black text-slate-500 uppercase">Mic {isListening ? "Active" : "Muted"}</span>
+                        </div>
+                </div>
+                
+                <div className="flex gap-2">
+                        <Button onClick={toggleVoice} variant="outline" size="sm" className="h-8 w-8 p-0 rounded-full bg-white" disabled={isSpeaking}>
+                        {isVoiceEnabled ? <Volume2 className="h-4 w-4"/> : <VolumeX className="h-4 w-4"/>}
+                    </Button>
+                </div>
             </div>
-        )}
+        </div>
       </div>
-      <Card className="h-full flex flex-col">
-        <CardHeader>
-          <CardTitle>Real-time Feedback</CardTitle>
-          <CardDescription>AI analysis of your latest response.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-grow">
-          {isThinking && !currentFeedback && (
-            <div className="space-y-4">
-                <Skeleton className="h-6 w-1/3" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-6 w-1/4 mt-4" />
-                <Skeleton className="h-20 w-full" />
-            </div>
-          )}
-          {currentFeedback && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-semibold mb-2 text-accent">Feedback</h3>
-                <p className="text-sm text-muted-foreground">{currentFeedback.feedback}</p>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2 text-accent">Suggestions</h3>
-                <p className="text-sm text-muted-foreground">{currentFeedback.suggestions}</p>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2 text-accent">Score</h3>
-                <p className="text-sm text-muted-foreground">{currentFeedback.score}/100</p>
-              </div>
-            </div>
-          )}
-          {!isThinking && !currentFeedback && (
-              <div className="text-center text-muted-foreground h-full flex flex-col justify-center items-center">
-                  <p>{isInterviewComplete ? "Interview has ended." : "Your feedback will appear here after you respond."}</p>
-                  {isFallbackMode && (
-                    <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-500 text-xs">
-                      AI is busy. Switched to standard interview track.
-                    </div>
-                  )}
-              </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

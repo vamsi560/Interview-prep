@@ -18,11 +18,11 @@ const InterviewTurnInputSchema = z.object({
 export type InterviewTurnInput = z.infer<typeof InterviewTurnInputSchema>;
 
 const InterviewTurnOutputSchema = z.object({
-  feedback: z.string().describe('Detailed feedback on the user\'s last answer.'),
-  suggestions: z.string().describe('Tips for improvement.'),
-  score: z.number().describe('Score from 0-100 for the last answer.'),
+  feedback: z.string().describe('Minimal internal feedback or empty string.'),
+  suggestions: z.string().describe('Minimal internal suggestions or empty string.'),
+  score: z.number().describe('Internal score estimate 0-100.'),
   nextQuestion: z.string().describe('The next interview question.'),
-  isComplete: z.boolean().describe('Whether the interview cycle is done.')
+  isComplete: z.boolean().describe('Whether the 20-question protocol is done.')
 });
 
 export type InterviewTurnOutput = z.infer<typeof InterviewTurnOutputSchema>;
@@ -47,7 +47,7 @@ const prompt = ai.definePrompt({
   "{{{userResponse}}}"
 
   YOUR TASKS:
-  1. ANALYZE the latest user response based on the previous question asked. Provide constructive feedback, suggestions for improvement (like the STAR method), and a score (0-100).
+  1. Internal Review: Briefly note if the answer was correct internally (keep feedback/suggestions strings very short or empty to save tokens).
   2. GENERATE the next logical interview question. 
   
   {{#if questionBank}}
@@ -55,15 +55,10 @@ const prompt = ai.definePrompt({
   {{{questionBank}}}
   Please select the most appropriate next question from this list if relevant, otherwise generate a follow-up.
   {{else}}
-  If no question bank is provided, follow a standard technical interview flow: 
-  1. Intro (done if in transcript)
-  2. Technical Project Deep Dive
-  3. Technology Proficiency
-  4. Strengths/Weaknesses
-  5. Career Goals
+  If no question bank is provided, follow a technical/professional interview sequence.
   {{/if}}
 
-  3. COMPLETION: If this was the 5th user response, set isComplete to true and provide a closing message. Otherwise set to false.
+  3. COMPLETION: This interview uses a 20-question protocol. Only set isComplete to true if the candidate has clearly finished their final answer (around turn 20).
 
   Format your response as purely valid JSON matching the output schema.`,
 });

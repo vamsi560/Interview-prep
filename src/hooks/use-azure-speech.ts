@@ -95,6 +95,8 @@ export const useAzureSpeech = (
     }
   }, [onFinalResult, toast, isSpeaking]);
 
+  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
   const speak = useCallback((text: string) => {
     if (!isVoiceEnabled || !window.speechSynthesis) return;
     
@@ -102,10 +104,22 @@ export const useAzureSpeech = (
     stopContinuous();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    // Use high quality voices if available
-    const voices = window.speechSynthesis.getVoices();
-    const premiumVoice = voices.find(v => v.name.includes("Google") || v.name.includes("Natural"));
-    if (premiumVoice) utterance.voice = premiumVoice;
+    
+    if (!preferredVoiceRef.current) {
+        const voices = window.speechSynthesis.getVoices();
+        // Priority: Google US English -> Microsoft Aria -> Natural -> first English voice
+        const voice = 
+            voices.find(v => v.name === "Google US English") || 
+            voices.find(v => v.name.includes("Aria")) ||
+            voices.find(v => v.name.includes("Natural")) ||
+            voices.find(v => v.lang.startsWith("en-"));
+        
+        if (voice) preferredVoiceRef.current = voice;
+    }
+
+    if (preferredVoiceRef.current) {
+        utterance.voice = preferredVoiceRef.current;
+    }
 
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => {

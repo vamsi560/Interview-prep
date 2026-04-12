@@ -39,75 +39,81 @@ const navItems = [
   { href: "/review", icon: BookText, label: "Past Interviews" },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, hideLayout = false }: { children: React.ReactNode, hideLayout?: boolean }) {
   const pathname = usePathname();
 
-  return (
-    <SidebarProvider>
-      <div className="flex min-h-screen">
-        <Sidebar>
-          <SidebarHeader>
-            <div className="flex items-center gap-2 bg-slate-900 p-2 rounded-md">
-              <Image src={organizationLogo} alt="Organization Logo" className="h-7 w-auto object-contain" />
-              <span className="text-lg font-semibold text-primary-foreground">
-                ProPrep AI
-              </span>
-            </div>
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === item.href}
-                    tooltip={item.label}
-                  >
-                    <Link href={item.href}>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarContent>
-        </Sidebar>
-
-        <SidebarInset>
-          <header className="flex h-14 items-center justify-between border-b bg-background/50 backdrop-blur-sm px-4 md:px-6">
-            <SidebarTrigger className="md:hidden" />
-            <div className="ml-auto">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src="/placeholder-user.jpg" alt="@user" />
-                      <AvatarFallback>U</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">User</p>
-                      <p className="text-xs leading-none text-muted-foreground">
-                        user@example.com
-                      </p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Settings</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </header>
-          <main className="flex-1 p-4 md:p-6">{children}</main>
-        </SidebarInset>
+  if (hideLayout) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <main className="flex-1 flex flex-col pt-8 pb-12 px-4 md:px-8">
+          {children}
+        </main>
       </div>
-    </SidebarProvider>
+    );
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-50">
+      <header className="flex h-16 items-center justify-between border-b bg-white/80 backdrop-blur-md px-6 sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="bg-slate-900 p-1.5 rounded-lg">
+            <Image src={organizationLogo} alt="Logo" className="h-6 w-auto" />
+          </div>
+          <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">
+            ProPrep AI
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-4">
+           {pathname !== "/dashboard" && (
+             <Button variant="ghost" asChild className="text-muted-foreground hover:text-foreground">
+               <Link href="/dashboard" className="flex items-center gap-2">
+                 <BarChart2 className="h-4 w-4" />
+                 Dashboard
+               </Link>
+             </Button>
+           )}
+           <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full ring-2 ring-slate-100 p-0 overflow-hidden">
+                <Avatar className="h-full w-full">
+                  <AvatarImage src="/placeholder-user.jpg" alt="@user" />
+                  <AvatarFallback className="bg-slate-200">U</AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 mt-2" align="end" forceMount>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-semibold leading-none">Candidate Name</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    Interviewing Mode
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard" className="w-full">
+                  <BarChart2 className="mr-2 h-4 w-4" />
+                  <span>View Analytics</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Settings</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+      
+      <main className="flex-1 max-w-7xl mx-auto w-full py-8 px-4 md:px-8">
+        {children}
+      </main>
+
+      <footer className="py-6 border-t bg-white flex justify-center">
+         <p className="text-xs text-muted-foreground font-medium">Powered by Advanced AI Proctoring &copy; 2026</p>
+      </footer>
+    </div>
   );
 }

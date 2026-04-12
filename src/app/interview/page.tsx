@@ -24,8 +24,8 @@ function InterviewLoadingSkeleton() {
 
 export default function InterviewPage() {
   return (
-    <AppShell>
-      <div className="h-[calc(100vh-10rem)]">
+    <AppShell hideLayout={true}>
+      <div className="h-full flex flex-col">
         <Suspense fallback={<InterviewLoadingSkeleton />}>
           <InterviewView />
         </Suspense>
