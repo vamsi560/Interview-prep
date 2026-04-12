@@ -55,13 +55,17 @@ export function AppShell({ children, hideLayout = false }: { children: React.Rea
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
       <header className="flex h-16 items-center justify-between border-b bg-white/80 backdrop-blur-md px-6 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-6">
           <div className="bg-[#056BFC] p-1.5 rounded-lg shadow-sm">
-            <div className="h-5 w-5 flex items-center justify-center text-white font-black text-xs">A</div>
+             <Image src={organizationLogo} alt="ValueMomentum Logo" className="h-5 w-auto object-contain" />
           </div>
-          <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#303030] to-[#056BFC]">
-            Aura
-          </span>
+          <div className="w-px h-6 bg-slate-200" />
+          <div className="flex items-center gap-2">
+             <div className="h-6 w-6 bg-[#F8F8F8] rounded-md flex items-center justify-center text-[#056BFC] font-black text-[10px] border">A</div>
+             <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#303030] to-[#056BFC]">
+               Aura
+             </span>
+          </div>
         </div>
         
         <div className="flex items-center gap-4">

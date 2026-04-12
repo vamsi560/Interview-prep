@@ -52,9 +52,15 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen w-full grid-cols-1 lg:grid-cols-2">
       <div className="hidden lg:flex flex-col items-start justify-center space-y-8 bg-gradient-to-br from-[#056BFC]/20 to-[#3FD534]/30 p-12 text-foreground">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-[#056BFC] rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg ring-4 ring-white">A</div>
-          <h1 className="text-3xl font-bold tracking-tight text-[#303030]">Aura <span className="text-[#056BFC]/60">| Interview</span></h1>
+        <div className="flex items-center gap-6">
+          <div className="bg-[#056BFC] p-2 rounded-xl shadow-lg ring-2 ring-white/20">
+             <Image src={organizationLogo} alt="ValueMomentum Logo" className="h-8 w-auto object-contain" />
+          </div>
+          <div className="w-px h-10 bg-black/10" />
+          <div className="flex items-center gap-2">
+             <div className="h-8 w-8 bg-white rounded-lg flex items-center justify-center text-[#056BFC] font-black text-lg shadow-sm">A</div>
+             <h1 className="text-3xl font-bold tracking-tight text-[#303030]">Aura</h1>
+          </div>
         </div>
         <h2 className="text-5xl font-black tracking-tighter text-[#303030] leading-none">
           The Future of <br/>

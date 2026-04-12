@@ -10,6 +10,8 @@ import { registerCandidateAction } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle, Copy, Mail, UserPlus, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
+import organizationLogo from "@/assets/VMLogoWhite.png";
 
 export default function RecruiterPortal() {
   const { toast } = useToast();
@@ -113,12 +115,18 @@ export default function RecruiterPortal() {
   return (
     <div className="min-h-screen bg-[#F8F8F8] flex flex-col">
       <header className="h-20 bg-white border-b flex items-center px-8 justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-           <div className="h-10 w-10 bg-[#056BFC] rounded-xl flex items-center justify-center text-white font-black text-xl shadow-md">A</div>
-           <div>
-              <h1 className="text-lg font-black text-[#303030] leading-none">Aura</h1>
-              <p className="text-[10px] uppercase font-bold text-[#056BFC] tracking-widest mt-1">Recruitment Portal</p>
-           </div>
+        <div className="flex items-center gap-6">
+          <div className="bg-[#056BFC] p-2 rounded-xl shadow-md">
+             <Image src={organizationLogo} alt="ValueMomentum Logo" className="h-6 w-auto object-contain" />
+          </div>
+          <div className="w-px h-8 bg-slate-200" />
+          <div className="flex items-center gap-2">
+             <div className="h-7 w-7 bg-[#F8F8F8] rounded-lg flex items-center justify-center text-[#056BFC] font-black text-sm border">A</div>
+             <div>
+                <h1 className="text-sm font-black text-[#303030] leading-none">Aura</h1>
+                <p className="text-[9px] uppercase font-bold text-[#056BFC] tracking-widest mt-0.5">Recruiter Hub</p>
+             </div>
+          </div>
         </div>
         <Button variant="outline" size="sm" asChild className="rounded-xl">
             <Link href="/dashboard">Dashboard</Link>
