@@ -1,16 +1,20 @@
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
 import { Pool } from 'pg';
 
-const connectionString = process.env.DATABASE_URL;
+// Temporarily hardcoded for Vercel deployment debugging as requested
+const connectionString = "postgresql://retool:npg_fYvMsiEmu6h2@ep-orange-paper-afxn5lg0-pooler.c-2.us-west-2.retooldb.com/retool?sslmode=require";
 
 const pool = new Pool({
   connectionString,
-  ssl: connectionString?.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
 export const db = {
-  query: (text: string, params?: any[]) => pool.query(text, params),
+  query: (text: string, params?: any[]) => {
+    return pool.query(text, params);
+  },
   pool,
 };
 
