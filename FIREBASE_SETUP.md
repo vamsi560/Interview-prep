@@ -1,76 +1,68 @@
-# 🚀 INTERVIEW APP - FIREBASE COMPLETELY REMOVED ✅
+# Data Layer: Firebase Disabled, Postgres Enabled
 
-## Current Status: Firebase Package Completely Removed
-The interview app works completely WITHOUT Firebase!
-All Firebase code and dependencies have been removed to prevent initialization.
+This repo originally started from a Firebase Studio template, but **Firebase is intentionally disabled** to avoid any initialization/runtime coupling. The app currently persists interview data in **Postgres** (via `pg`) and uses Azure services optionally for speech, proctoring, and storage exports.
 
-## What's Been Done:
-- ✅ `src/lib/firebase.ts` - All Firebase imports completely removed
-- ✅ `src/lib/firestore.ts` - All Firebase imports completely removed, only stubs remain
-- ✅ `src/app/actions.ts` - All database imports and calls removed
-- ✅ `package.json` - Firebase dependency completely removed
-- ✅ `apphosting.yaml` - Firebase hosting config commented out
+## Current status (as of 2026-04-24)
 
-## Current App Functionality:
-✅ **Interview Creation** - Works with local session IDs  
-✅ **AI Questions** - Full Gemini AI integration  
-✅ **AI Feedback** - Real-time response analysis  
-✅ **Voice Features** - Speech-to-text and text-to-speech  
-✅ **Complete Interview Flow** - Start to finish experience  
-✅ **Mock Summary Reports** - Placeholder reports generated  
-✅ **Zero Database Dependencies** - No Firebase errors  
-✅ **Fast Performance** - No network delays  
+- Firebase client SDK: not installed in `package.json`.
+- Firebase runtime wiring: stubbed/disabled in code.
+- Primary persistence: Postgres (sessions, transcripts, feedback, summary reports).
+- Optional exports: Azure Blob Storage for recordings + Markdown versions of reports.
 
-## What Works Without Database:
-- Start new interviews ✅
-- Get AI questions ✅  
-- Provide voice/text responses ✅
-- Receive AI feedback ✅
-- Complete interview sessions ✅
-- Generate mock summary reports ✅
+## What was changed (technical)
 
-## What Doesn't Work (By Design):
-- Past interviews aren't saved 🔄
-- Dashboard is empty 🔄  
-- No persistent data storage 🔄
+### Firebase disabled/stubbed
 
-## To Re-enable Firebase Later (Optional):
+- `src/lib/firebase.ts` exports dummy values and prevents Firebase initialization.
+- `src/lib/firestore.ts` contains stub implementations (no-ops) for prior Firestore calls.
+- `apphosting.yaml` is commented/disabled to avoid Firebase App Hosting configuration drift.
 
-1. **Add Firebase dependency back:**
-   ```bash
-   npm install firebase@^11.9.1
-   ```
+### Postgres persistence enabled
 
-2. **Restore Firebase configuration in `src/lib/firebase.ts`:**
-   ```typescript
-   import {initializeApp, getApp, getApps} from 'firebase/app';
-   import {getFirestore} from 'firebase/firestore';
+- `src/lib/db.ts` defines the `pg` connection pool used by server actions.
+- `src/app/actions.ts` writes/reads:
+  - `sessions` table for interview sessions
+  - `candidates` table for candidate records (used for generated login links)
+- `src/lib/init-db.ts` documents the expected schema (tables + seed candidates).
 
-   const firebaseConfig = {
-     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-     authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-     projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-     messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-   };
+## Functional behavior (what management cares about)
 
-   const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-   const db = getFirestore(app);
-   export {app, db};
-   ```
+What works end-to-end:
+- Start an interview: creates a session row in Postgres (`createInterviewSession`).
+- Run interview turns: AI asks questions and evaluates responses (Genkit + Gemini).
+- Proctoring alerts (optional): Azure Vision detects “no face/multiple people/phone detected” events.
+- Recording upload (optional): browser records WebM and uploads chunks to Azure Blob.
+- Report generation: after completion, a full AI analysis is generated and stored in `sessions.summary_report`.
+- Dashboards: `/dashboard`, `/review`, `/hr-dashboard` load sessions from Postgres.
 
-3. **Set up Firebase:**
-   - Create project at https://console.firebase.google.com/
-   - Enable Firestore
-   - Set environment variables in Vercel
+What is intentionally “optional / mock” when credentials are missing:
+- Azure Speech token endpoint errors without `AZURE_SPEECH_KEY` (STT won’t work).
+- Azure Vision/Azure Document Intelligence return safe mock results when credentials are missing.
+- Azure Blob export becomes a no-op when storage credentials are missing.
 
-4. **Restore Firestore operations and update actions.ts to use real database calls**
+## Postgres schema expectations
 
-## Test the App Now:
-1. Deploy to Vercel ✅
-2. Click "Start Interview" ✅
-3. Complete full interviews ✅
-4. Zero errors! ✅
+The schema definition lives in `src/lib/init-db.ts`. At minimum, the app expects:
+- `candidates(id, role, difficulty, topics)`
+- `sessions(id, candidate_id, date, role, score, duration, feedback, transcript, summary_report, violations)`
 
-The app is production-ready without any database!
+## Re-enabling Firebase later (optional roadmap)
+
+If you decide to move back to Firebase/Firestore, treat it as a deliberate migration (not a toggle):
+
+1. Add Firebase client dependency back:
+   - `npm install firebase`
+2. Re-implement `src/lib/firebase.ts` with real `initializeApp` + `getFirestore` wiring.
+3. Replace stubbed CRUD in `src/lib/firestore.ts` with real Firestore operations.
+4. Update server actions to use Firestore instead of Postgres (or run both in parallel during migration):
+   - `createInterviewSession`
+   - `saveInterviewSession`
+   - `fetchInterviewSessions`
+   - `fetchInterviewSession`
+   - `getCandidate` / `registerCandidateAction`
+5. Decide how to migrate existing data:
+   - One-time backfill Postgres → Firestore, or
+   - Dual-write for a period, then cut over.
+
+Recommended approach for management: timebox this as a project with clear acceptance criteria (data parity, dashboard correctness, rollback plan).
+

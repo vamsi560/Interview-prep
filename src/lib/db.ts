@@ -1,7 +1,10 @@
 import { Pool } from 'pg';
 
-// Temporarily hardcoded for Vercel deployment debugging as requested
-const connectionString = "postgresql://retool:npg_fYvMsiEmu6h2@ep-orange-paper-afxn5lg0-pooler.c-2.us-west-2.retooldb.com/retool?sslmode=require";
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("Missing DATABASE_URL. Set it in your environment (e.g. .env.local) before starting the app.");
+}
 
 const pool = new Pool({
   connectionString,

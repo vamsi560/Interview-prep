@@ -8,7 +8,7 @@ import { ROLE_BASED_QUESTIONS, FALLBACK_QUESTIONS } from "@/lib/interview-consta
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MicOff, Volume2, VolumeX, Loader2, ChevronRight } from "lucide-react";
-import type { InterviewSettings, Message } from "@/lib/types";
+import type { InterviewSettings, Message, SecurityEvent } from "@/lib/types";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAzureSpeech } from "@/hooks/use-azure-speech";
@@ -33,8 +33,40 @@ export function InterviewView() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunkIndexRef = useRef<number>(0);
   const violationsRef = useRef<{ timestamp: string; message: string }[]>([]);
+  const securityEventsRef = useRef<SecurityEvent[]>([]);
+  const suspicionScoreRef = useRef<number>(0);
   const isMountedRef = useRef(true);
   const [showNextButton, setShowNextButton] = useState(false);
+  const devtoolsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const getRelativeTimestamp = useCallback(() => {
+    if (!interviewStartTime.current) return "00:00";
+    return new Date(Date.now() - interviewStartTime.current.getTime())
+      .toISOString()
+      .substring(14, 19);
+  }, []);
+
+  const addSecurityEvent = useCallback((type: SecurityEvent["type"], details?: string) => {
+    const timestamp = getRelativeTimestamp();
+    securityEventsRef.current.push({ timestamp, type, details });
+
+    // Lightweight suspicion scoring (kept intentionally simple to avoid false positives).
+    const weights: Record<SecurityEvent["type"], number> = {
+      visibility_hidden: 10,
+      visibility_visible: 0,
+      window_blur: 6,
+      window_focus: 0,
+      copy: 4,
+      cut: 2,
+      paste: 6,
+      context_menu: 2,
+      devtools_suspected: 8,
+      proctor_looking_away: 10,
+      proctor_typing: 6,
+      proctor_phone_detected: 20,
+    };
+    suspicionScoreRef.current = Math.min(100, suspicionScoreRef.current + (weights[type] ?? 0));
+  }, [getRelativeTimestamp]);
 
   const handleInterviewCompletion = useCallback(async (finalTranscript: Message[]) => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -51,6 +83,8 @@ export function InterviewView() {
       feedback: [], 
       transcript: finalTranscript,
       violations: violationsRef.current,
+      securityEvents: securityEventsRef.current,
+      suspicionScore: suspicionScoreRef.current,
     };
   
     const result = await saveInterviewSession(interviewId, sessionData);
@@ -105,11 +139,18 @@ export function InterviewView() {
         const dataUri = canvas.toDataURL("image/jpeg");
         const res = await checkProctoring({ videoFrameDataUri: dataUri });
         if (res.success && res.data?.hasViolation) {
-          const timestamp = interviewStartTime.current
-            ? new Date(Date.now() - interviewStartTime.current.getTime()).toISOString().substring(14, 19)
-            : "00:00";
+          const timestamp = getRelativeTimestamp();
             
           violationsRef.current.push({ timestamp, message: res.data.warningMessage });
+          const eventType =
+            res.data.violationType === "looking_away"
+              ? "proctor_looking_away"
+              : res.data.violationType === "typing"
+                ? "proctor_typing"
+                : res.data.violationType === "phone_detected"
+                  ? "proctor_phone_detected"
+                  : "visibility_visible";
+          addSecurityEvent(eventType, res.data.violationType);
           
           toast({
             title: "Proctoring Warning",
@@ -119,7 +160,7 @@ export function InterviewView() {
         }
       }
     }
-  }, [toast]);
+  }, [addSecurityEvent, getRelativeTimestamp, toast]);
 
   useEffect(() => {
     const id = searchParams.get("interviewId");
@@ -157,6 +198,42 @@ export function InterviewView() {
         }
 
         proctoringIntervalRef.current = setInterval(runProctoring, 5000);
+
+        const onVisibility = () => {
+          addSecurityEvent(document.hidden ? "visibility_hidden" : "visibility_visible");
+        };
+        const onBlur = () => addSecurityEvent("window_blur");
+        const onFocus = () => addSecurityEvent("window_focus");
+        const onCopy = () => addSecurityEvent("copy");
+        const onCut = () => addSecurityEvent("cut");
+        const onPaste = () => addSecurityEvent("paste");
+        const onContextMenu = () => addSecurityEvent("context_menu");
+
+        document.addEventListener("visibilitychange", onVisibility);
+        window.addEventListener("blur", onBlur);
+        window.addEventListener("focus", onFocus);
+        window.addEventListener("copy", onCopy);
+        window.addEventListener("cut", onCut);
+        window.addEventListener("paste", onPaste);
+        window.addEventListener("contextmenu", onContextMenu);
+
+        // Best-effort devtools detection (heuristic).
+        devtoolsIntervalRef.current = setInterval(() => {
+          const widthGap = Math.abs(window.outerWidth - window.innerWidth);
+          const heightGap = Math.abs(window.outerHeight - window.innerHeight);
+          if (widthGap > 160 || heightGap > 160) addSecurityEvent("devtools_suspected", `gap:${widthGap}x${heightGap}`);
+        }, 2000);
+
+        // Cleanup handler stored on ref via closure.
+        (window as any).__auraSecCleanup = () => {
+          document.removeEventListener("visibilitychange", onVisibility);
+          window.removeEventListener("blur", onBlur);
+          window.removeEventListener("focus", onFocus);
+          window.removeEventListener("copy", onCopy);
+          window.removeEventListener("cut", onCut);
+          window.removeEventListener("paste", onPaste);
+          window.removeEventListener("contextmenu", onContextMenu);
+        };
       } catch (error) {
         console.error('Error accessing camera:', error);
         setHasCameraPermission(false);
@@ -174,6 +251,12 @@ export function InterviewView() {
         isMountedRef.current = false;
         if(proctoringIntervalRef.current) {
             clearInterval(proctoringIntervalRef.current);
+        }
+        if (devtoolsIntervalRef.current) {
+          clearInterval(devtoolsIntervalRef.current);
+        }
+        if ((window as any).__auraSecCleanup) {
+          try { (window as any).__auraSecCleanup(); } catch {}
         }
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
             mediaRecorderRef.current.stop();

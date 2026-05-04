@@ -1,6 +1,4 @@
 
-import type { GenerateSummaryReportOutput } from "@/ai/flows/generate-summary-report";
-
 export type InterviewSettings = {
   role: string;
   difficulty: 'easy' | 'medium' | 'hard';
@@ -12,12 +10,69 @@ export type Message = {
   id: string;
   role: 'user' | 'ai';
   content: string;
+  createdAt?: string;
 };
 
 export type Feedback = {
   feedback: string;
   suggestions: string;
   score: number;
+};
+
+export type SecurityEvent = {
+  timestamp: string; // mm:ss relative to interview start
+  type:
+    | 'visibility_hidden'
+    | 'visibility_visible'
+    | 'window_blur'
+    | 'window_focus'
+    | 'copy'
+    | 'cut'
+    | 'paste'
+    | 'context_menu'
+    | 'devtools_suspected'
+    | 'proctor_looking_away'
+    | 'proctor_typing'
+    | 'proctor_phone_detected';
+  details?: string;
+};
+
+export type ReviewerScorecard = {
+  competencies: Array<{
+    name: string;
+    score: number; // 0-100
+    notes?: string;
+  }>;
+  overallNotes?: string;
+  recommendation?: 'Strong Hire' | 'Hire' | 'Leaning Hire' | 'No Hire';
+};
+
+export type FullInterviewReport = {
+  overallScore: number;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  rubric: {
+    competencies: Array<{
+      name: string;
+      score: number;
+      evidence: Array<{
+        quote: string;
+        speaker: 'user' | 'ai';
+        whyItMatters: string;
+      }>;
+    }>;
+    overallNotes: string;
+  };
+  technicalFeedback: string;
+  behavioralFeedback: string;
+  questionFeedback: Array<{
+    question: string;
+    feedback: string;
+    score: number;
+    evidence: Array<{ quote: string; speaker: 'user' | 'ai' }>;
+  }>;
+  hiringRecommendation: 'Strong Hire' | 'Hire' | 'Leaning Hire' | 'No Hire';
 };
 
 export type InterviewSession = {
@@ -28,6 +83,9 @@ export type InterviewSession = {
   duration: string;
   feedback: Feedback[];
   transcript: Message[];
-  summaryReport?: GenerateSummaryReportOutput | null;
+  summaryReport?: FullInterviewReport | null;
   violations?: { timestamp: string; message: string }[];
+  securityEvents?: SecurityEvent[];
+  suspicionScore?: number;
+  reviewerScorecard?: ReviewerScorecard | null;
 };

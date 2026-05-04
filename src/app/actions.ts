@@ -4,12 +4,8 @@ import { verifyAadharWithADI } from "@/lib/azure-id-verify";
 import { analyzeFrameWithAzure } from "@/lib/azure-vision-proctor";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { 
-  generateSummaryReport,
-  type GenerateSummaryReportInput,
-} from "@/ai/flows/generate-summary-report";
-import { interviewTurn } from "@/ai/flows/interview-turn";
-import { FALLBACK_QUESTIONS } from "@/lib/interview-constants";
+import { FALLBACK_QUESTIONS, ROLE_BASED_QUESTIONS } from "@/lib/interview-constants";
+import type { ReviewerScorecard } from "@/lib/types";
 
 export async function processInterviewTurn(input: {
   role: string,
@@ -18,50 +14,49 @@ export async function processInterviewTurn(input: {
   transcript: { role: 'user' | 'ai', content: string }[],
   userResponse: string
 }) {
-  try {
-    const result = await withRetry(() => interviewTurn({
-      role: input.role,
-      difficulty: input.difficulty,
-      questionBank: input.questionBank,
-      transcript: input.transcript,
-      userResponse: input.userResponse
-    }));
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error in processInterviewTurn AI call:", error);
-    return { success: false, error: String(error) };
-  }
+  // Intentional: no AI usage. We only use AI for final post-interview feedback.
+  const questionList = getQuestionList(input.role, input.questionBank);
+  const askedCount = (input.transcript || []).filter(m => m.role === "ai").length;
+  const nextQuestion = questionList[askedCount] ?? "The interview is now complete. Thank you for your time.";
+  const isComplete = askedCount >= questionList.length;
+
+  return {
+    success: true,
+    data: {
+      feedback: "",
+      suggestions: "",
+      score: 0,
+      nextQuestion,
+      isComplete,
+    }
+  };
 }
 
 export async function getInitialQuestion(input: { role: string, difficulty: string, questionBank?: string }) {
-  try {
-    const result = await withRetry(() => interviewTurn({
-      role: input.role,
-      difficulty: input.difficulty as any,
-      questionBank: input.questionBank,
-      transcript: [],
-      userResponse: "The candidate has just entered the room. Please start the interview with an introduction."
-    }));
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error in getInitialQuestion:", error);
-    return { success: false, error: String(error) };
-  }
+  // Intentional: no AI usage. We only use AI for final post-interview feedback.
+  const questionList = getQuestionList(input.role, input.questionBank);
+  const nextQuestion = questionList[0] ?? "Please introduce yourself.";
+
+  return {
+    success: true,
+    data: {
+      feedback: "",
+      suggestions: "",
+      score: 0,
+      nextQuestion,
+      isComplete: questionList.length <= 1,
+    }
+  };
 }
 
-const MAX_RETRIES = 2;
-const INITIAL_DELAY = 1000;
+function getQuestionList(role: string, questionBank?: string): string[] {
+  const fromBank = (questionBank || "")
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
 
-async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delay = INITIAL_DELAY): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    if (retries > 0 && String(error).includes("503")) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return withRetry(fn, retries - 1, delay * 2);
-    }
-    throw error;
-  }
+  if (fromBank.length) return fromBank;
+  return ROLE_BASED_QUESTIONS[role] || FALLBACK_QUESTIONS;
 }
 
 // Firebase imports commented out - using local implementations
@@ -96,14 +91,18 @@ export async function saveInterviewSession(id: string, session: Omit<InterviewSe
              duration = $2, 
              feedback = $3, 
              transcript = $4, 
-             violations = $5
-             WHERE id = $6`,
+             violations = $5,
+             security_events = $6,
+             suspicion_score = $7
+             WHERE id = $8`,
             [
                 session.score || 0, 
                 session.duration, 
                 JSON.stringify(session.feedback || []), 
                 JSON.stringify(session.transcript || []), 
                 JSON.stringify(session.violations || []), 
+                JSON.stringify(session.securityEvents || []),
+                session.suspicionScore || 0,
                 id
             ]
         );
@@ -116,17 +115,31 @@ export async function saveInterviewSession(id: string, session: Omit<InterviewSe
 
 export async function fetchInterviewSessions() {
     const res = await db.query("SELECT * FROM sessions ORDER BY date DESC");
-    return res.rows;
+    return res.rows.map(normalizeSessionRow);
 }
 
 export async function fetchInterviewSession(id: string) {
     const res = await db.query("SELECT * FROM sessions WHERE id = $1", [id]);
-    return res.rows[0] || null;
+    const row = res.rows[0];
+    return row ? normalizeSessionRow(row) : null;
 }
 
 export async function getCandidate(id: string) {
     const res = await db.query("SELECT * FROM candidates WHERE id = $1", [id]);
     return res.rows[0] || null;
+}
+
+export async function saveReviewerScorecardAction(input: { interviewId: string; scorecard: ReviewerScorecard }) {
+  try {
+    await db.query("UPDATE sessions SET reviewer_scorecard = $1 WHERE id = $2", [
+      JSON.stringify(input.scorecard),
+      input.interviewId,
+    ]);
+    return { success: true };
+  } catch (error) {
+    console.error("DB Error saving reviewer scorecard:", error);
+    return { success: false, error: String(error) };
+  }
 }
 
 export async function registerCandidateAction(data: { name: string, email: string, role: string, difficulty: string }) {
@@ -188,8 +201,8 @@ export async function generateAndSaveSummaryReport(interviewId: string) {
     });
 
     await db.query(
-        "UPDATE sessions SET summary_report = $1 WHERE id = $2",
-        [JSON.stringify(report), interviewId]
+        "UPDATE sessions SET summary_report = $1, score = $2 WHERE id = $3",
+        [JSON.stringify(report), report.overallScore ?? 0, interviewId]
     );
 
     // Export to Azure Storage as Markdown
@@ -201,6 +214,23 @@ export async function generateAndSaveSummaryReport(interviewId: string) {
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
     return { success: false, error: errorMessage };
   }
+}
+
+function normalizeSessionRow(row: any): InterviewSession {
+  return {
+    id: row.id,
+    date: row.date,
+    role: row.role,
+    score: row.score ?? 0,
+    duration: row.duration ?? "0",
+    feedback: row.feedback ?? [],
+    transcript: row.transcript ?? [],
+    summaryReport: row.summary_report ?? null,
+    violations: row.violations ?? [],
+    securityEvents: row.security_events ?? [],
+    suspicionScore: row.suspicion_score ?? 0,
+    reviewerScorecard: row.reviewer_scorecard ?? null,
+  };
 }
 
 async function uploadReportToAzure(interviewId: string, report: any, session: any) {
