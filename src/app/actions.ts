@@ -50,7 +50,14 @@ export async function getInitialQuestion(input: { role: string, difficulty: stri
 }
 
 function getQuestionList(role: string, questionBank?: string): string[] {
-  const fromBank = (questionBank || "")
+  const questionBankText =
+    typeof questionBank === "string"
+      ? questionBank
+      : Array.isArray(questionBank)
+        ? questionBank.join("\n")
+        : "";
+
+  const fromBank = questionBankText
     .split(/\r?\n/)
     .map(s => s.trim())
     .filter(Boolean);
