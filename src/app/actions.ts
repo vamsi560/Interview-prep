@@ -224,12 +224,22 @@ export async function generateAndSaveSummaryReport(interviewId: string) {
 }
 
 function normalizeSessionRow(row: any): InterviewSession {
+  const normalizedDate =
+    typeof row.date === "string"
+      ? row.date
+      : row.date?.toISOString?.()
+        ? row.date.toISOString()
+        : String(row.date ?? "");
+
+  const normalizedDuration =
+    typeof row.duration === "string" ? row.duration : String(row.duration ?? "0");
+
   return {
     id: row.id,
-    date: row.date,
+    date: normalizedDate,
     role: row.role,
     score: row.score ?? 0,
-    duration: row.duration ?? "0",
+    duration: normalizedDuration,
     feedback: row.feedback ?? [],
     transcript: row.transcript ?? [],
     summaryReport: row.summary_report ?? null,
